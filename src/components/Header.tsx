@@ -67,6 +67,8 @@ export const Header: React.FC<HeaderProps> = ({
         return 'Dasbor Real-Time';
       case 'database':
         return 'Database Pengguna & Excel';
+      case 'classes':
+        return 'Pengaturan Kelas & Wali';
       case 'time_summary':
         return 'Rekap Akumulasi Waktu';
       case 'audit':

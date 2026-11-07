@@ -26,7 +26,8 @@ import {
   OfficeLocation, 
   AttendanceRecord, 
   UserRole, 
-  WhatsAppConfig 
+  WhatsAppConfig,
+  SchoolClass
 } from './types/attendance';
 import { StorageService } from './services/storage';
 import { NotificationService } from './services/notificationService';
@@ -34,6 +35,7 @@ import { Header } from './components/Header';
 import { SidebarNavigation, NavigationTab } from './components/SidebarNavigation';
 import { RealtimeAdminDashboard } from './components/RealtimeAdminDashboard';
 import { UserDatabaseView } from './components/UserDatabaseView';
+import { ClassSettingsView } from './components/ClassSettingsView';
 import { MonthlyTimeSummaryView } from './components/MonthlyTimeSummaryView';
 import { AuditExportView } from './components/AuditExportView';
 import { EmployeePortalView } from './components/EmployeePortalView';
@@ -49,6 +51,7 @@ export default function App() {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [offlineQueue, setOfflineQueue] = useState<AttendanceRecord[]>([]);
   const [waConfig, setWaConfig] = useState<WhatsAppConfig>(StorageService.getWhatsAppConfig());
+  const [classes, setClasses] = useState<SchoolClass[]>([]);
 
   // UI Navigation & Auth
   const [currentTab, setCurrentTab] = useState<NavigationTab>('realtime');
@@ -74,11 +77,13 @@ export default function App() {
     const records = StorageService.getAttendanceRecords();
     const queue = StorageService.getOfflineQueue();
     const authUser = StorageService.getAuthUser();
+    const clsList = StorageService.getClasses();
 
     setEmployees(emps);
     setOffices(offs);
     setAttendanceRecords(records);
     setOfflineQueue(queue);
+    setClasses(clsList);
     setActiveEmployee(authUser);
     if (authUser) {
       setCurrentUserRole(authUser.role);
@@ -88,15 +93,20 @@ export default function App() {
     StorageService.initFirestoreSync({
       onEmployees: (remoteEmps) => setEmployees(remoteEmps),
       onAttendance: (remoteRecs) => setAttendanceRecords(remoteRecs),
+      onClasses: (remoteClasses) => setClasses(remoteClasses),
     });
 
-    // Real-time Firestore subscriptions for instant multi-device attendance sync
+    // Real-time Firestore subscriptions for instant multi-device attendance & class sync
     const unsubAttendance = StorageService.subscribeToAttendance((liveRecords) => {
       setAttendanceRecords(liveRecords);
     });
 
     const unsubEmployees = StorageService.subscribeToEmployees((liveEmployees) => {
       setEmployees(liveEmployees);
+    });
+
+    const unsubClasses = StorageService.subscribeToClasses((liveClasses) => {
+      setClasses(liveClasses);
     });
 
     NotificationService.requestPushPermission();
@@ -124,6 +134,7 @@ export default function App() {
     return () => {
       if (typeof unsubAttendance === 'function') unsubAttendance();
       if (typeof unsubEmployees === 'function') unsubEmployees();
+      if (typeof unsubClasses === 'function') unsubClasses();
       window.removeEventListener('absensiku:toast', handleToastEvent);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
@@ -271,6 +282,8 @@ export default function App() {
                 ? 'Dasbor Real-Time'
                 : currentTab === 'database'
                 ? 'Database Pengguna & Excel'
+                : currentTab === 'classes'
+                ? 'Pengaturan Kelas & Wali Kelas'
                 : currentTab === 'time_summary'
                 ? 'Rekap Akumulasi Waktu Bulanan'
                 : currentTab === 'audit'
@@ -306,6 +319,15 @@ export default function App() {
           <UserDatabaseView
             employees={employees}
             onEmployeesChange={setEmployees}
+          />
+        )}
+
+        {/* Tab 3: Pengaturan Kelas, Wali Kelas & Anggota Siswa */}
+        {currentTab === 'classes' && (
+          <ClassSettingsView
+            classes={classes}
+            employees={employees}
+            onClassesChange={setClasses}
           />
         )}
 

@@ -36,5 +36,11 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isValidId(officeId);
     }
+
+    // Classes & Homeroom Collection (Pengaturan Kelas, Wali Kelas & Anggota Siswa)
+    match /classes/{classId} {
+      allow read: if true;
+      allow write: if isValidId(classId);
+    }
   }
 }

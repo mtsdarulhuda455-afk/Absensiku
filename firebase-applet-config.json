@@ -1,10 +1,12 @@
 {
+  "projectId": "absensi-mts-darul-huda",
+  "appId": "1:308685000736:web:537a36337385fb9005ac45",
   "apiKey": "AIzaSyCcs-l32ZfaL6DaCoYKYbi8rt2wXaBs2vE",
   "authDomain": "absensi-mts-darul-huda.firebaseapp.com",
-  "projectId": "absensi-mts-darul-huda",
+  "firestoreDatabaseId": "ai-studio-presensikuenterp-b3a50b6b-c075-4610-91d0-e8161417338b",
   "storageBucket": "absensi-mts-darul-huda.firebasestorage.app",
   "messagingSenderId": "308685000736",
-  "appId": "1:308685000736:web:537a36337385fb9005ac45",
   "measurementId": "G-R9MJ0Q19WX",
-  "firestoreDatabaseId": "(default)"
+  "oAuthClientId": "308685000736-tscv8c46grfcr7o76adhq8tenb72iqe7.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
 }

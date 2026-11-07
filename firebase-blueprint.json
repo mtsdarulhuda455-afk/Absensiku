@@ -64,6 +64,23 @@
         "customDayNote": { "type": "string" }
       },
       "required": ["checkInOpenTime", "workStartTime", "defaultCheckOutTime", "todayCheckOutTime"]
+    },
+    "SchoolClass": {
+      "title": "SchoolClass",
+      "description": "Pengaturan rombel kelas, wali kelas penanggung jawab, dan daftar anggota siswa",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "gradeLevel": { "type": "string" },
+        "academicYear": { "type": "string" },
+        "homeroomTeacherId": { "type": "string" },
+        "homeroomTeacherName": { "type": "string" },
+        "roomName": { "type": "string" },
+        "capacity": { "type": "number" },
+        "members": { "type": "array" }
+      },
+      "required": ["id", "name", "gradeLevel", "academicYear", "homeroomTeacherId", "homeroomTeacherName"]
     }
   },
   "firestore": {
@@ -78,6 +95,10 @@
     "/settings/work_schedule": {
       "schema": "WorkSchedule",
       "description": "Dokumen konfigurasi jam kerja dan kepulangan"
+    },
+    "/classes/{classId}": {
+      "schema": "SchoolClass",
+      "description": "Koleksi rombel kelas, penugasan wali kelas, dan anggota siswa"
     }
   }
 }

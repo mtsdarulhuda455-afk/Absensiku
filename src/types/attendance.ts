@@ -131,3 +131,36 @@ export interface WorkScheduleConfig {
   customDayNote: string; // e.g. "Hari Jumat / Kepulangan Awal"
 }
 
+// Model Siswa / Anggota Kelas MTs Darul Huda
+export interface ClassMember {
+  id: string; // e.g. "std-7a-01"
+  nisn: string; // e.g. "0081928371"
+  name: string; // e.g. "Ahmad Fauzan Al-Ghifari"
+  gender: 'L' | 'P';
+  parentName: string; // e.g. "H. Supriyadi"
+  phone: string; // e.g. "6281234567890" (WhatsApp orang tua untuk notifikasi kehadiran & pengumuman kelas)
+  address?: string;
+  qrCodeId: string; // e.g. "NISN-0081928371"
+  photoUrl?: string;
+  isActive: boolean;
+  notes?: string;
+  joinedAt?: string;
+}
+
+// Model Kelas & Wali Kelas
+export interface SchoolClass {
+  id: string; // e.g. "cls-7a"
+  name: string; // e.g. "Kelas 7-A (Tahfidz & Sains)"
+  gradeLevel: '7' | '8' | '9' | string;
+  academicYear: string; // e.g. "2025/2026"
+  homeroomTeacherId: string; // Employee ID
+  homeroomTeacherName: string; // Nama Wali Kelas
+  homeroomTeacherNip?: string; // NIP Wali Kelas
+  homeroomTeacherPhone?: string; // No WA Wali Kelas
+  roomName?: string; // e.g. "Gedung Al-Hikmah Lt. 2 (R. 201)"
+  capacity: number; // e.g. 32
+  members: ClassMember[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+

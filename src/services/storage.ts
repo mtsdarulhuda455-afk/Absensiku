@@ -1,4 +1,4 @@
-import { Employee, OfficeLocation, AttendanceRecord, WhatsAppConfig, NotificationLog, MonthlyTimeAccumulation, WorkScheduleConfig } from '../types/attendance';
+import { Employee, OfficeLocation, AttendanceRecord, WhatsAppConfig, NotificationLog, MonthlyTimeAccumulation, WorkScheduleConfig, SchoolClass, ClassMember } from '../types/attendance';
 import { db, handleFirestoreError, OperationType, firebaseConfig } from './firebase';
 import { 
   collection, 
@@ -6,6 +6,7 @@ import {
   getDoc, 
   getDocs, 
   setDoc, 
+  deleteDoc,
   onSnapshot, 
   query, 
   orderBy, 
@@ -340,6 +341,452 @@ const KEY_WA_CONFIG = 'absensiku_wa_config';
 const KEY_NOTIFICATION_LOGS = 'absensiku_notification_logs';
 const KEY_CURRENT_USER = 'absensiku_auth_user';
 const KEY_SCHEDULE = 'absensiku_schedule';
+const KEY_CLASSES = 'absensiku_classes';
+
+export const INITIAL_CLASSES: SchoolClass[] = [
+  {
+    id: 'cls-7a',
+    name: 'Kelas 7-A (Tahfidz & Sains)',
+    gradeLevel: '7',
+    academicYear: '2025/2026',
+    homeroomTeacherId: 'emp-001',
+    homeroomTeacherName: 'Budi Santoso, S.Pd',
+    homeroomTeacherNip: 'NIP-19850312-001',
+    homeroomTeacherPhone: '6281289345120',
+    roomName: 'Ruang 101 - Gedung Ibnu Sina',
+    capacity: 32,
+    createdAt: '2025-07-15',
+    members: [
+      {
+        id: 'std-7a-01',
+        nisn: '0098712301',
+        name: 'Ahmad Fauzan Al-Ghifari',
+        gender: 'L',
+        parentName: 'H. Supriyadi',
+        phone: '6281298765431',
+        address: 'Jl. Pesantren No. 14, Jakarta',
+        qrCodeId: 'NISN-0098712301',
+        isActive: true,
+        joinedAt: '2025-07-15',
+        notes: 'Ketua Kelas',
+      },
+      {
+        id: 'std-7a-02',
+        nisn: '0098712302',
+        name: 'Siti Nur Aisyah',
+        gender: 'P',
+        parentName: "M. Syafi'i",
+        phone: '6281298765432',
+        address: 'Jl. Melati No. 8, Jakarta',
+        qrCodeId: 'NISN-0098712302',
+        isActive: true,
+        joinedAt: '2025-07-15',
+        notes: 'Sekretaris Rombel',
+      },
+      {
+        id: 'std-7a-03',
+        nisn: '0098712303',
+        name: 'Muhammad Rizky Pratama',
+        gender: 'L',
+        parentName: 'Ir. Hendra',
+        phone: '6281298765433',
+        address: 'Jl. Anggrek No. 21, Jakarta',
+        qrCodeId: 'NISN-0098712303',
+        isActive: true,
+        joinedAt: '2025-07-15',
+      },
+      {
+        id: 'std-7a-04',
+        nisn: '0098712304',
+        name: 'Fatimah Zahra Ramadhani',
+        gender: 'P',
+        parentName: 'Drs. Subekti',
+        phone: '6281298765434',
+        address: 'Komplek Griya Indah D4',
+        qrCodeId: 'NISN-0098712304',
+        isActive: true,
+        joinedAt: '2025-07-15',
+        notes: 'Bendahara Kelas',
+      },
+      {
+        id: 'std-7a-05',
+        nisn: '0098712305',
+        name: 'Daffa Ibnu Sina',
+        gender: 'L',
+        parentName: 'dr. Anshori',
+        phone: '6281298765435',
+        address: 'Jl. Dahlia No. 5',
+        qrCodeId: 'NISN-0098712305',
+        isActive: true,
+        joinedAt: '2025-07-15',
+      },
+      {
+        id: 'std-7a-06',
+        nisn: '0098712306',
+        name: 'Naila Putri Salsabila',
+        gender: 'P',
+        parentName: 'Bambang Irawan',
+        phone: '6281298765436',
+        address: 'Jl. Mawar Indah No. 12',
+        qrCodeId: 'NISN-0098712306',
+        isActive: true,
+        joinedAt: '2025-07-15',
+      },
+      {
+        id: 'std-7a-07',
+        nisn: '0098712307',
+        name: 'Yusuf Habibi Nurhuda',
+        gender: 'L',
+        parentName: 'K.H. Nurhadi',
+        phone: '6281298765437',
+        address: 'Jl. Kyai Mojo No. 3',
+        qrCodeId: 'NISN-0098712307',
+        isActive: true,
+        joinedAt: '2025-07-15',
+      },
+      {
+        id: 'std-7a-08',
+        nisn: '0098712308',
+        name: 'Anisa Rahmawati Putri',
+        gender: 'P',
+        parentName: 'Sulaiman',
+        phone: '6281298765438',
+        address: 'Jl. Kenanga No. 19',
+        qrCodeId: 'NISN-0098712308',
+        isActive: true,
+        joinedAt: '2025-07-15',
+      },
+    ],
+  },
+  {
+    id: 'cls-7b',
+    name: 'Kelas 7-B (Bilingual & Riset)',
+    gradeLevel: '7',
+    academicYear: '2025/2026',
+    homeroomTeacherId: 'emp-003',
+    homeroomTeacherName: 'Reza Aditya, S.Kom',
+    homeroomTeacherNip: 'NIP-19941108-003',
+    homeroomTeacherPhone: '6287890123445',
+    roomName: 'Ruang 102 - Gedung Al-Khawarizmi',
+    capacity: 32,
+    createdAt: '2025-07-15',
+    members: [
+      {
+        id: 'std-7b-01',
+        nisn: '0098712401',
+        name: 'Bilal Maulana Akbar',
+        gender: 'L',
+        parentName: 'M. Akbar',
+        phone: '6281329876501',
+        address: 'Jl. Pemuda No. 7',
+        qrCodeId: 'NISN-0098712401',
+        isActive: true,
+        joinedAt: '2025-07-15',
+        notes: 'Ketua Kelas',
+      },
+      {
+        id: 'std-7b-02',
+        nisn: '0098712402',
+        name: 'Kayla Az-Zahra',
+        gender: 'P',
+        parentName: 'Rahmat Hidayat',
+        phone: '6281329876502',
+        address: 'Jl. Cempaka No. 4',
+        qrCodeId: 'NISN-0098712402',
+        isActive: true,
+        joinedAt: '2025-07-15',
+      },
+      {
+        id: 'std-7b-03',
+        nisn: '0098712403',
+        name: 'Farhan Nuril Anwar',
+        gender: 'L',
+        parentName: 'H. Anwar Sadat',
+        phone: '6281329876503',
+        address: 'Jl. Kartini No. 11',
+        qrCodeId: 'NISN-0098712403',
+        isActive: true,
+        joinedAt: '2025-07-15',
+      },
+      {
+        id: 'std-7b-04',
+        nisn: '0098712404',
+        name: 'Salma Salsabila',
+        gender: 'P',
+        parentName: 'Agus Santosa',
+        phone: '6281329876504',
+        address: 'Jl. Veteran No. 3',
+        qrCodeId: 'NISN-0098712404',
+        isActive: true,
+        joinedAt: '2025-07-15',
+      },
+      {
+        id: 'std-7b-05',
+        nisn: '0098712405',
+        name: 'Haikal Rayhan',
+        gender: 'L',
+        parentName: 'Iskandar',
+        phone: '6281329876505',
+        address: 'Jl. Sudirman No. 88',
+        qrCodeId: 'NISN-0098712405',
+        isActive: true,
+        joinedAt: '2025-07-15',
+      },
+      {
+        id: 'std-7b-06',
+        nisn: '0098712406',
+        name: 'Alya Syarafina',
+        gender: 'P',
+        parentName: 'Taufiqurrahman',
+        phone: '6281329876506',
+        address: 'Jl. Gatot Subroto No. 19',
+        qrCodeId: 'NISN-0098712406',
+        isActive: true,
+        joinedAt: '2025-07-15',
+      },
+    ],
+  },
+  {
+    id: 'cls-8a',
+    name: 'Kelas 8-A (Tahfidz Unggulan)',
+    gradeLevel: '8',
+    academicYear: '2025/2026',
+    homeroomTeacherId: 'emp-004',
+    homeroomTeacherName: 'Dewi Anggraini, S.Pd',
+    homeroomTeacherNip: 'NIP-19910515-004',
+    homeroomTeacherPhone: '6281312345678',
+    roomName: 'Ruang 201 - Gedung Ar-Razi Lt. 2',
+    capacity: 30,
+    createdAt: '2025-07-15',
+    members: [
+      {
+        id: 'std-8a-01',
+        nisn: '0087612501',
+        name: 'Zaidan Robbani',
+        gender: 'L',
+        parentName: 'H. Lukman Hakim',
+        phone: '6285712399101',
+        address: 'Perum Asri Blok C2',
+        qrCodeId: 'NISN-0087612501',
+        isActive: true,
+        joinedAt: '2024-07-15',
+        notes: 'Ketua Kelas',
+      },
+      {
+        id: 'std-8a-02',
+        nisn: '0087612502',
+        name: 'Maryam Qonitah',
+        gender: 'P',
+        parentName: 'Ust. Abdullah',
+        phone: '6285712399102',
+        address: 'Jl. KH Hasyim No. 9',
+        qrCodeId: 'NISN-0087612502',
+        isActive: true,
+        joinedAt: '2024-07-15',
+      },
+      {
+        id: 'std-8a-03',
+        nisn: '0087612503',
+        name: 'Ibrahim Al-Fatih',
+        gender: 'L',
+        parentName: 'dr. Fathurrahman',
+        phone: '6285712399103',
+        address: 'Jl. Masjid Agung No. 1',
+        qrCodeId: 'NISN-0087612503',
+        isActive: true,
+        joinedAt: '2024-07-15',
+      },
+      {
+        id: 'std-8a-04',
+        nisn: '0087612504',
+        name: 'Najwa Khairunnisa',
+        gender: 'P',
+        parentName: 'Budi Darmawan',
+        phone: '6285712399104',
+        address: 'Jl. Pattimura No. 15',
+        qrCodeId: 'NISN-0087612504',
+        isActive: true,
+        joinedAt: '2024-07-15',
+      },
+      {
+        id: 'std-8a-05',
+        nisn: '0087612505',
+        name: 'Malik Abdul Aziz',
+        gender: 'L',
+        parentName: 'Aziz Mahmud',
+        phone: '6285712399105',
+        address: 'Jl. Diponegoro No. 44',
+        qrCodeId: 'NISN-0087612505',
+        isActive: true,
+        joinedAt: '2024-07-15',
+      },
+      {
+        id: 'std-8a-06',
+        nisn: '0087612506',
+        name: 'Rania Hasna Kamila',
+        gender: 'P',
+        parentName: 'Ir. H. Gunawan',
+        phone: '6285712399106',
+        address: 'Jl. Ahmad Yani No. 71',
+        qrCodeId: 'NISN-0087612506',
+        isActive: true,
+        joinedAt: '2024-07-15',
+      },
+    ],
+  },
+  {
+    id: 'cls-8b',
+    name: 'Kelas 8-B (Reguler Kreatif)',
+    gradeLevel: '8',
+    academicYear: '2025/2026',
+    homeroomTeacherId: 'emp-005',
+    homeroomTeacherName: 'Maya Putri Lestari, S.E',
+    homeroomTeacherNip: 'NIP-19960218-005',
+    homeroomTeacherPhone: '6289654321098',
+    roomName: 'Ruang 202 - Gedung Ar-Razi Lt. 2',
+    capacity: 32,
+    createdAt: '2025-07-15',
+    members: [
+      {
+        id: 'std-8b-01',
+        nisn: '0087612601',
+        name: 'Fikri Haikal Ramadhan',
+        gender: 'L',
+        parentName: 'Ramadhan Syah',
+        phone: '628998877601',
+        address: 'Jl. Surya Kencana No. 5',
+        qrCodeId: 'NISN-0087612601',
+        isActive: true,
+        joinedAt: '2024-07-15',
+      },
+      {
+        id: 'std-8b-02',
+        nisn: '0087612602',
+        name: 'Nadia Safitri',
+        gender: 'P',
+        parentName: 'Joko Widodo S.',
+        phone: '628998877602',
+        address: 'Jl. Gajah Mada No. 10',
+        qrCodeId: 'NISN-0087612602',
+        isActive: true,
+        joinedAt: '2024-07-15',
+      },
+      {
+        id: 'std-8b-03',
+        nisn: '0087612603',
+        name: 'Raffi Ahmad Danendra',
+        gender: 'L',
+        parentName: 'Danendra Kusuma',
+        phone: '628998877603',
+        address: 'Jl. Hayam Wuruk No. 8',
+        qrCodeId: 'NISN-0087612603',
+        isActive: true,
+        joinedAt: '2024-07-15',
+      },
+      {
+        id: 'std-8b-04',
+        nisn: '0087612604',
+        name: 'Aisyah Humaira',
+        gender: 'P',
+        parentName: 'H. Mansyur',
+        phone: '628998877604',
+        address: 'Jl. Imam Bonjol No. 22',
+        qrCodeId: 'NISN-0087612604',
+        isActive: true,
+        joinedAt: '2024-07-15',
+      },
+      {
+        id: 'std-8b-05',
+        nisn: '0087612605',
+        name: 'Dimas Aditya Nugraha',
+        gender: 'L',
+        parentName: 'Nugraha Pratama',
+        phone: '628998877605',
+        address: 'Jl. Basuki Rahmat No. 3',
+        qrCodeId: 'NISN-0087612605',
+        isActive: true,
+        joinedAt: '2024-07-15',
+      },
+    ],
+  },
+  {
+    id: 'cls-9a',
+    name: 'Kelas 9-A (Unggulan & Olimpiade)',
+    gradeLevel: '9',
+    academicYear: '2025/2026',
+    homeroomTeacherId: 'emp-002',
+    homeroomTeacherName: 'Dra. Hj. Siti Rahmawati, M.Pd',
+    homeroomTeacherNip: 'NIP-19880724-002',
+    homeroomTeacherPhone: '6285712398451',
+    roomName: 'Ruang 301 - Gedung Utama Lt. 3',
+    capacity: 30,
+    createdAt: '2025-07-15',
+    members: [
+      {
+        id: 'std-9a-01',
+        nisn: '0076512701',
+        name: 'Sulthan Hasanuddin',
+        gender: 'L',
+        parentName: 'H. Hasan Basri',
+        phone: '6281234567701',
+        address: 'Jl. Kusuma Bangsa No. 2',
+        qrCodeId: 'NISN-0076512701',
+        isActive: true,
+        joinedAt: '2023-07-15',
+        notes: 'Ketua OSIS & Kelas',
+      },
+      {
+        id: 'std-9a-02',
+        nisn: '0076512702',
+        name: 'Syifa Nurul Izzah',
+        gender: 'P',
+        parentName: 'M. Izzuddin',
+        phone: '6281234567702',
+        address: 'Jl. Pahlawan No. 40',
+        qrCodeId: 'NISN-0076512702',
+        isActive: true,
+        joinedAt: '2023-07-15',
+        notes: 'Juara 1 KSM Matematika',
+      },
+      {
+        id: 'std-9a-03',
+        nisn: '0076512703',
+        name: 'Fatih Robbani Pratama',
+        gender: 'L',
+        parentName: 'Pratama Jaya',
+        phone: '6281234567703',
+        address: 'Jl. Teuku Umar No. 16',
+        qrCodeId: 'NISN-0076512703',
+        isActive: true,
+        joinedAt: '2023-07-15',
+      },
+      {
+        id: 'std-9a-04',
+        nisn: '0076512704',
+        name: 'Zahra Amalia Sholiha',
+        gender: 'P',
+        parentName: 'H. Sholihin',
+        phone: '6281234567704',
+        address: 'Jl. R.A. Kartini No. 5',
+        qrCodeId: 'NISN-0076512704',
+        isActive: true,
+        joinedAt: '2023-07-15',
+      },
+      {
+        id: 'std-9a-05',
+        nisn: '0076512705',
+        name: 'Rayhan Al-Ghazali',
+        gender: 'L',
+        parentName: 'Ghazali Al-Mansyur',
+        phone: '6281234567705',
+        address: 'Jl. Kyai Kholil No. 18',
+        qrCodeId: 'NISN-0076512705',
+        isActive: true,
+        joinedAt: '2023-07-15',
+      },
+    ],
+  },
+];
 
 // Automatic Attendance Detection Engine
 export function detectAttendanceType(
@@ -612,6 +1059,7 @@ export const StorageService = {
     onEmployees?: (emps: Employee[]) => void;
     onAttendance?: (recs: AttendanceRecord[]) => void;
     onSchedule?: (sched: WorkScheduleConfig) => void;
+    onClasses?: (classes: SchoolClass[]) => void;
   }) {
     // 1. Initial Pull / Seeding for Employees
     getDocs(collection(db, 'employees'))
@@ -670,6 +1118,27 @@ export const StorageService = {
       .catch((err) => {
         handleFirestoreError(err, OperationType.GET, 'settings/work_schedule');
       });
+
+    // 4. Initial Pull / Seeding for Classes & Homeroom
+    getDocs(collection(db, 'classes'))
+      .then((snapshot) => {
+        if (!snapshot.empty) {
+          const remoteClasses = snapshot.docs.map(d => d.data() as SchoolClass);
+          if (remoteClasses.length > 0) {
+            this.saveClasses(remoteClasses);
+            callbacks?.onClasses?.(remoteClasses);
+          }
+        } else {
+          // Seed initial classes to Firestore
+          const initial = this.getClasses();
+          initial.forEach(cls => {
+            setDoc(doc(db, 'classes', cls.id), cls).catch(() => {});
+          });
+        }
+      })
+      .catch((err) => {
+        handleFirestoreError(err, OperationType.LIST, 'classes');
+      });
   },
 
   // Attach real-time snapshot listener for attendance records
@@ -703,6 +1172,127 @@ export const StorageService = {
       },
       (error) => {
         handleFirestoreError(error, OperationType.LIST, 'employees');
+      }
+    );
+  },
+
+  // ==========================================
+  // School Classes & Homeroom (Wali Kelas) Methods
+  // ==========================================
+  getClasses(): SchoolClass[] {
+    try {
+      const data = localStorage.getItem(KEY_CLASSES);
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // fallback
+    }
+    localStorage.setItem(KEY_CLASSES, JSON.stringify(INITIAL_CLASSES));
+    return INITIAL_CLASSES;
+  },
+
+  saveClasses(classes: SchoolClass[]): void {
+    localStorage.setItem(KEY_CLASSES, JSON.stringify(classes));
+    // Persist all classes to Firestore
+    classes.forEach((cls) => {
+      setDoc(doc(db, 'classes', cls.id), cls).catch((err) => {
+        handleFirestoreError(err, OperationType.WRITE, `classes/${cls.id}`);
+      });
+    });
+  },
+
+  saveClass(cls: SchoolClass): void {
+    const current = this.getClasses();
+    const index = current.findIndex((c) => c.id === cls.id);
+    let updated: SchoolClass[];
+    if (index >= 0) {
+      updated = [...current];
+      updated[index] = { ...cls, updatedAt: new Date().toISOString() };
+    } else {
+      updated = [{ ...cls, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, ...current];
+    }
+    localStorage.setItem(KEY_CLASSES, JSON.stringify(updated));
+    // Save to Firestore
+    setDoc(doc(db, 'classes', cls.id), cls).catch((err) => {
+      handleFirestoreError(err, OperationType.WRITE, `classes/${cls.id}`);
+    });
+  },
+
+  deleteClass(classId: string): void {
+    const current = this.getClasses();
+    const updated = current.filter((c) => c.id !== classId);
+    localStorage.setItem(KEY_CLASSES, JSON.stringify(updated));
+    // Delete from Firestore
+    deleteDoc(doc(db, 'classes', classId)).catch((err) => {
+      handleFirestoreError(err, OperationType.DELETE, `classes/${classId}`);
+    });
+  },
+
+  addStudentToClass(classId: string, student: ClassMember): void {
+    const current = this.getClasses();
+    const cls = current.find((c) => c.id === classId);
+    if (!cls) return;
+
+    const existingIndex = cls.members.findIndex((m) => m.id === student.id || m.nisn === student.nisn);
+    let updatedMembers: ClassMember[];
+    if (existingIndex >= 0) {
+      updatedMembers = [...cls.members];
+      updatedMembers[existingIndex] = student;
+    } else {
+      updatedMembers = [student, ...cls.members];
+    }
+
+    const updatedCls: SchoolClass = {
+      ...cls,
+      members: updatedMembers,
+      updatedAt: new Date().toISOString(),
+    };
+    this.saveClass(updatedCls);
+  },
+
+  updateStudentInClass(classId: string, student: ClassMember): void {
+    const current = this.getClasses();
+    const cls = current.find((c) => c.id === classId);
+    if (!cls) return;
+
+    const updatedMembers = cls.members.map((m) => (m.id === student.id ? student : m));
+    const updatedCls: SchoolClass = {
+      ...cls,
+      members: updatedMembers,
+      updatedAt: new Date().toISOString(),
+    };
+    this.saveClass(updatedCls);
+  },
+
+  removeStudentFromClass(classId: string, studentId: string): void {
+    const current = this.getClasses();
+    const cls = current.find((c) => c.id === classId);
+    if (!cls) return;
+
+    const updatedMembers = cls.members.filter((m) => m.id !== studentId);
+    const updatedCls: SchoolClass = {
+      ...cls,
+      members: updatedMembers,
+      updatedAt: new Date().toISOString(),
+    };
+    this.saveClass(updatedCls);
+  },
+
+  // Attach real-time snapshot listener for classes
+  subscribeToClasses(callback: (classes: SchoolClass[]) => void) {
+    return onSnapshot(
+      collection(db, 'classes'),
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map((d) => d.data() as SchoolClass);
+          localStorage.setItem(KEY_CLASSES, JSON.stringify(list));
+          callback(list);
+        }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'classes');
       }
     );
   },

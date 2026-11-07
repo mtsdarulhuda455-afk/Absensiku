@@ -14,11 +14,12 @@ import {
   ChevronRight,
   LogIn,
   LogOut,
-  Sparkles
+  Sparkles,
+  School
 } from 'lucide-react';
 import { UserRole, Employee } from '../types/attendance';
 
-export type NavigationTab = 'realtime' | 'database' | 'time_summary' | 'audit' | 'portal';
+export type NavigationTab = 'realtime' | 'database' | 'classes' | 'time_summary' | 'audit' | 'portal';
 
 interface SidebarNavigationProps {
   isOpen: boolean;
@@ -65,6 +66,12 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
       label: 'Database Pengguna & Excel',
       sublabel: 'Upload massal .xlsx & cetak barcode batang',
       icon: Users,
+    },
+    {
+      id: 'classes' as NavigationTab,
+      label: 'Pengaturan Kelas & Wali',
+      sublabel: 'Kelola rombel, wali kelas & anggota siswa',
+      icon: School,
     },
     {
       id: 'time_summary' as NavigationTab,
