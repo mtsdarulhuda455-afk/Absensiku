@@ -319,6 +319,8 @@ export default function App() {
           <UserDatabaseView
             employees={employees}
             onEmployeesChange={setEmployees}
+            classes={classes}
+            onClassesChange={setClasses}
           />
         )}
 

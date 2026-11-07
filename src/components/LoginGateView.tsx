@@ -63,7 +63,7 @@ export const LoginGateView: React.FC<LoginGateViewProps> = ({
   };
 
   const handleSuperAdminLogin = () => {
-    const admin = employees.find((e) => e.role === 'admin') || employees[0];
+    const admin = employees.find((e) => e.role === 'super_admin') || employees.find((e) => e.role === 'admin') || employees[0];
     onLogin(admin);
   };
 

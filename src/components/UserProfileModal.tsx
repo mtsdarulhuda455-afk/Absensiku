@@ -294,10 +294,13 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 <select
                   value={formData.category}
                   onChange={(e) => setFormData({ ...formData, category: e.target.value as EmployeeCategory })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-blue-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-blue-500 cursor-pointer"
                 >
-                  <option value="guru">Guru Mata Pelajaran / Wali Kelas</option>
-                  <option value="staf">Staf Tenaga Kependidikan</option>
+                  <option value="super_admin">Super Admin / Pimpinan Madrasah</option>
+                  <option value="admin">Administrator Presensi</option>
+                  <option value="guru">Dewan Guru / Wali Kelas</option>
+                  <option value="siswa">Siswa / Peserta Didik</option>
+                  <option value="staf">Staf Tenaga Kependidikan / TU</option>
                   <option value="manajemen">Manajemen & Kepala Sekolah</option>
                 </select>
               </div>
@@ -308,12 +311,15 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 <select
                   value={formData.role}
                   onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-blue-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-blue-500 cursor-pointer"
                 >
-                  <option value="admin">Super Admin (Akses Penuh)</option>
+                  <option value="super_admin">⭐ Super Admin (Akses Penuh Seluruh Sistem)</option>
+                  <option value="admin">🛡️ Administrator Presensi & Data</option>
+                  <option value="guru">📚 Dewan Guru (Portal & Absensi)</option>
+                  <option value="siswa">🎓 Siswa / Peserta Didik MTs</option>
+                  <option value="staf">💼 Staf Tata Usaha</option>
                   <option value="manager">Kepala Sekolah / Manajer</option>
-                  <option value="employee">Guru / Staf Portal</option>
-                  <option value="kiosk">Kiosk Piket Gerbang</option>
+                  <option value="kiosk">🖥️ Kiosk Piket Gerbang</option>
                 </select>
               </div>
 

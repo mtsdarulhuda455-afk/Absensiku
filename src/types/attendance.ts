@@ -1,22 +1,26 @@
-export type UserRole = 'admin' | 'manager' | 'employee' | 'kiosk';
+export type UserRole = 'super_admin' | 'admin' | 'guru' | 'siswa' | 'staf' | 'manager' | 'employee' | 'kiosk';
 
-export type EmployeeCategory = 'guru' | 'staf' | 'manajemen';
+export type EmployeeCategory = 'guru' | 'staf' | 'manajemen' | 'siswa' | 'admin' | 'super_admin';
 
 export interface Employee {
   id: string;
-  nip: string;
+  nip: string; // NIP Pegawai atau NISN Siswa
   name: string;
   role: UserRole;
   category: EmployeeCategory;
-  department: 'Dewan Guru' | 'Tata Usaha & Administrasi' | 'Engineering' | 'Operations' | 'Finance' | 'Keamanan';
+  department: string; // 'Dewan Guru' | 'Tata Usaha & Administrasi' | 'Kelas 7-A' | etc.
   position: string;
-  phone: string; // e.g. 628123456789
+  phone: string; // e.g. 628123456789 (No WA pegawai atau orang tua siswa)
   email: string;
   avatarUrl: string;
   faceMatchScore: number;
-  qrCodeId: string;
+  qrCodeId: string; // Barcode ID (Code 39)
   shift: string; // "07:00 - 14:00 WIB"
   isActive: boolean;
+  classId?: string;
+  gender?: 'L' | 'P';
+  parentName?: string;
+  notes?: string;
 }
 
 export interface OfficeLocation {

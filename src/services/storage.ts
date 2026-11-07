@@ -66,7 +66,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     id: 'emp-001',
     nip: 'NIP-19850312-001',
     name: 'Budi Santoso, S.Pd',
-    role: 'employee',
+    role: 'guru',
     category: 'guru',
     department: 'Dewan Guru',
     position: 'Guru Matematika & Waka Kurikulum',
@@ -82,10 +82,10 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     id: 'emp-002',
     nip: 'NIP-19880724-002',
     name: 'Dra. Hj. Siti Rahmawati, M.Pd',
-    role: 'manager',
-    category: 'manajemen',
+    role: 'super_admin',
+    category: 'super_admin',
     department: 'Dewan Guru',
-    position: 'Kepala Sekolah',
+    position: 'Kepala Madrasah & Super Admin',
     phone: '6285712398451',
     email: 'siti.rahmawati@sekolah.sch.id',
     avatarUrl: '/src/assets/images/avatar_siti_rahma_1793876906014.jpg',
@@ -98,10 +98,10 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     id: 'emp-003',
     nip: 'NIP-19941108-003',
     name: 'Reza Aditya, S.Kom',
-    role: 'employee',
+    role: 'guru',
     category: 'guru',
     department: 'Dewan Guru',
-    position: 'Guru Informatika & Multimedia',
+    position: 'Guru Informatika & Wali Kelas 7-B',
     phone: '6287890123445',
     email: 'reza.aditya@sekolah.sch.id',
     avatarUrl: '/src/assets/images/avatar_reza_aditya_1793876906907.jpg',
@@ -115,9 +115,9 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     nip: 'NIP-19910515-004',
     name: 'Dewi Anggraini, S.Pd',
     role: 'admin',
-    category: 'guru',
+    category: 'admin',
     department: 'Dewan Guru',
-    position: 'Guru Bahasa & Koordinator Kesiswaan',
+    position: 'Admin Presensi & Guru Bahasa',
     phone: '6281312345678',
     email: 'dewi.anggraini@sekolah.sch.id',
     avatarUrl: '/src/assets/images/avatar_siti_rahma_1793876906014.jpg',
@@ -130,10 +130,10 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     id: 'emp-005',
     nip: 'NIP-19960218-005',
     name: 'Maya Putri Lestari, S.E',
-    role: 'employee',
+    role: 'staf',
     category: 'staf',
     department: 'Tata Usaha & Administrasi',
-    position: 'Kepala Tata Usaha & Kepegawaian',
+    position: 'Kepala Tata Usaha & Staf Kepegawaian',
     phone: '6289654321098',
     email: 'maya.lestari@sekolah.sch.id',
     avatarUrl: '/src/assets/images/avatar_siti_rahma_1793876906014.jpg',
@@ -157,6 +157,44 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     qrCodeId: '19890401-006',
     shift: '06:00 - 15:00 WIB',
     isActive: true,
+  },
+  {
+    id: 'std-001',
+    nip: '0081928371',
+    name: 'Ahmad Fauzan Al-Ghifari',
+    role: 'siswa',
+    category: 'siswa',
+    department: 'Kelas 7-A (Tahfidz & Sains)',
+    position: 'Siswa / Ketua Kelas 7-A',
+    phone: '6281234567890',
+    email: 'ahmad.fauzan@siswa.mts.sch.id',
+    avatarUrl: '/src/assets/images/avatar_reza_aditya_1793876906907.jpg',
+    faceMatchScore: 98.0,
+    qrCodeId: 'NISN-0081928371',
+    shift: '07:00 - 13:30 WIB',
+    isActive: true,
+    gender: 'L',
+    parentName: 'H. Supriyadi',
+    notes: 'Ketua Kelas 7-A',
+  },
+  {
+    id: 'std-002',
+    nip: '0076512702',
+    name: 'Syifa Nurul Izzah',
+    role: 'siswa',
+    category: 'siswa',
+    department: 'Kelas 9-A (Unggulan & Olimpiade)',
+    position: 'Siswi / Juara 1 KSM',
+    phone: '6281234567702',
+    email: 'syifa.izzah@siswa.mts.sch.id',
+    avatarUrl: '/src/assets/images/avatar_siti_rahma_1793876906014.jpg',
+    faceMatchScore: 99.0,
+    qrCodeId: 'NISN-0076512702',
+    shift: '07:00 - 13:30 WIB',
+    isActive: true,
+    gender: 'P',
+    parentName: 'M. Izzuddin',
+    notes: 'Peraih Medali Olimpiade',
   }
 ];
 
@@ -910,7 +948,29 @@ export const StorageService = {
   getEmployees(): Employee[] {
     try {
       const data = localStorage.getItem(KEY_EMPLOYEES);
-      if (data) return JSON.parse(data);
+      if (data) {
+        const list: Employee[] = JSON.parse(data);
+        // Ensure super_admin and sample siswa exist if list is from previous session
+        const hasSiswa = list.some((e) => e.role === 'siswa' || e.category === 'siswa');
+        const hasSuperAdmin = list.some((e) => e.role === 'super_admin');
+        if (!hasSiswa || !hasSuperAdmin) {
+          const merged = [...list];
+          if (!hasSuperAdmin) {
+            const admin = merged.find((e) => e.id === 'emp-002');
+            if (admin) {
+              admin.role = 'super_admin';
+              admin.category = 'super_admin';
+            }
+          }
+          if (!hasSiswa) {
+            const sampleStudents = INITIAL_EMPLOYEES.filter((e) => e.role === 'siswa');
+            merged.push(...sampleStudents);
+          }
+          localStorage.setItem(KEY_EMPLOYEES, JSON.stringify(merged));
+          return merged;
+        }
+        return list;
+      }
     } catch {
       // fallback
     }

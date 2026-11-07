@@ -148,9 +148,12 @@ export const Header: React.FC<HeaderProps> = ({
               onChange={(e) => onRoleChange(e.target.value as UserRole)}
               className="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg pl-2.5 pr-7 py-1.5 focus:outline-none focus:border-blue-500 appearance-none font-medium cursor-pointer"
             >
-              <option value="admin">Super Admin</option>
+              <option value="super_admin">Super Admin</option>
+              <option value="admin">Administrator</option>
+              <option value="guru">Dewan Guru</option>
+              <option value="siswa">Siswa MTs</option>
+              <option value="staf">Staf Tata Usaha</option>
               <option value="manager">Kepala Sekolah / Manajer</option>
-              <option value="employee">Guru / Staf</option>
               <option value="kiosk">Kiosk Piket</option>
             </select>
             <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
