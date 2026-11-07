@@ -1,0 +1,83 @@
+{
+  "entities": {
+    "Employee": {
+      "title": "Employee",
+      "description": "Data profil guru dan staf madrasah MTs Darul Huda",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nip": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "category": { "type": "string" },
+        "department": { "type": "string" },
+        "position": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "faceMatchScore": { "type": "number" },
+        "qrCodeId": { "type": "string" },
+        "shift": { "type": "string" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["id", "nip", "name", "role", "category", "department", "position", "isActive"]
+    },
+    "AttendanceRecord": {
+      "title": "AttendanceRecord",
+      "description": "Log transaksi presensi masuk atau pulang dengan validasi biometrik/barcode dan geolokasi",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "employeeName": { "type": "string" },
+        "employeeNip": { "type": "string" },
+        "department": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "type": { "type": "string" },
+        "status": { "type": "string" },
+        "lateMinutes": { "type": "number" },
+        "earlyMinutes": { "type": "number" },
+        "overtimeHours": { "type": "number" },
+        "verificationMethod": { "type": "string" },
+        "matchConfidence": { "type": "number" },
+        "isOfflineQueued": { "type": "boolean" },
+        "syncStatus": { "type": "string" },
+        "pushNotificationSent": { "type": "boolean" },
+        "waNotificationSent": { "type": "boolean" },
+        "waStatus": { "type": "string" },
+        "deviceInfo": { "type": "string" }
+      },
+      "required": ["id", "employeeId", "employeeName", "date", "time", "timestamp", "type", "status"]
+    },
+    "WorkSchedule": {
+      "title": "WorkSchedule",
+      "description": "Pengaturan jam operasional dan jam kepulangan",
+      "type": "object",
+      "properties": {
+        "checkInOpenTime": { "type": "string" },
+        "workStartTime": { "type": "string" },
+        "defaultCheckOutTime": { "type": "string" },
+        "todayCheckOutTime": { "type": "string" },
+        "isCustomDay": { "type": "boolean" },
+        "customDayNote": { "type": "string" }
+      },
+      "required": ["checkInOpenTime", "workStartTime", "defaultCheckOutTime", "todayCheckOutTime"]
+    }
+  },
+  "firestore": {
+    "/employees/{employeeId}": {
+      "schema": "Employee",
+      "description": "Koleksi data guru dan staf MTs Darul Huda"
+    },
+    "/attendance_records/{recordId}": {
+      "schema": "AttendanceRecord",
+      "description": "Koleksi log transaksi absensi"
+    },
+    "/settings/work_schedule": {
+      "schema": "WorkSchedule",
+      "description": "Dokumen konfigurasi jam kerja dan kepulangan"
+    }
+  }
+}

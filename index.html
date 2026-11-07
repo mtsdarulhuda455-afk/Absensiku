@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      (function() {
+        try {
+          var _origFetch = window.fetch;
+          Object.defineProperty(window, 'fetch', {
+            configurable: true,
+            enumerable: true,
+            get: function() {
+              return _origFetch;
+            },
+            set: function(val) {
+              _origFetch = val;
+            }
+          });
+        } catch (err) {
+          // fallback
+        }
+      })();
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AbsensiKu - Sistem Presensi Wajah, GPS & Barcode Batang</title>
+    <meta name="description" content="Sistem absensi berbasis lokasi (GPS/Geofencing), pengenalan wajah biometrik, scanner barcode batang, rekap akumulasi keterlambatan tanpa toleransi, serta notifikasi WhatsApp otomatis." />
+    <meta property="og:title" content="AbsensiKu - Sistem Presensi Wajah, GPS & Barcode Batang" />
+    <meta property="og:description" content="Sistem absensi berbasis lokasi (GPS/Geofencing), pengenalan wajah biometrik, scanner barcode batang, rekap akumulasi keterlambatan tanpa toleransi, serta notifikasi WhatsApp otomatis." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-slate-900 text-slate-100 antialiased font-sans">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

@@ -1,0 +1,6 @@
+{
+  "name": "PresensiKu Enterprise - Smart Face & GPS Attendance",
+  "description": "Sistem absensi berbasis lokasi (GPS/Geofencing), pengenalan wajah biometrik, scanner QR/Barcode eksternal & kamera, mode offline, penggajian otomatis (payroll), serta integrasi notifikasi WhatsApp.",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
