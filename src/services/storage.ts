@@ -42,6 +42,25 @@ export function parseTimeToMinutes(timeStr: string): number {
   return h * 60 + m;
 }
 
+export function cleanForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return null as any;
+  }
+  if (Array.isArray(data)) {
+    return data.map((item) => cleanForFirestore(item)) as any;
+  }
+  if (typeof data === 'object') {
+    const cleaned: any = {};
+    for (const [key, value] of Object.entries(data as Record<string, any>)) {
+      if (value !== undefined) {
+        cleaned[key] = cleanForFirestore(value);
+      }
+    }
+    return cleaned;
+  }
+  return data;
+}
+
 export const DEFAULT_OFFICES: OfficeLocation[] = [
   {
     id: 'off-sekolah',
@@ -980,31 +999,49 @@ export const StorageService = {
 
   saveEmployees(employees: Employee[]) {
     localStorage.setItem(KEY_EMPLOYEES, JSON.stringify(employees));
-    // Persist all employees to Firestore in background
+    // Persist all employees to Firestore in background safely
     employees.forEach((emp) => {
-      setDoc(doc(db, 'employees', emp.id), emp).catch((err) => {
-        handleFirestoreError(err, OperationType.WRITE, `employees/${emp.id}`);
-      });
+      try {
+        const cleanData = cleanForFirestore(emp);
+        setDoc(doc(db, 'employees', emp.id), cleanData).catch((err) => {
+          handleFirestoreError(err, OperationType.WRITE, `employees/${emp.id}`);
+        });
+      } catch (err) {
+        console.warn(`[Firestore] Skipping write for ${emp.id}:`, err);
+      }
     });
   },
 
   updateEmployee(updated: Employee): void {
     const list = this.getEmployees();
-    const index = list.findIndex(e => e.id === updated.id);
+    const index = list.findIndex((e) => e.id === updated.id);
     if (index >= 0) {
       list[index] = updated;
     } else {
       list.push(updated);
     }
-    this.saveEmployees(list);
-    // Persist specific doc to Firestore
-    setDoc(doc(db, 'employees', updated.id), updated).catch((err) => {
-      handleFirestoreError(err, OperationType.WRITE, `employees/${updated.id}`);
-    });
-    // Update authUser if matched
-    const current = this.getAuthUser();
-    if (current && current.id === updated.id) {
-      this.setAuthUser(updated);
+    
+    // Always persist to localStorage first
+    localStorage.setItem(KEY_EMPLOYEES, JSON.stringify(list));
+
+    // Update authUser if current user is being updated
+    try {
+      const current = this.getAuthUser();
+      if (current && current.id === updated.id) {
+        this.setAuthUser(updated);
+      }
+    } catch (e) {
+      console.warn('Auth user sync notice:', e);
+    }
+
+    // Persist specific doc to Firestore safely
+    try {
+      const cleanData = cleanForFirestore(updated);
+      setDoc(doc(db, 'employees', updated.id), cleanData).catch((err) => {
+        handleFirestoreError(err, OperationType.WRITE, `employees/${updated.id}`);
+      });
+    } catch (err) {
+      console.warn('[Firestore] Error persisting updated employee:', err);
     }
   },
 
@@ -1257,9 +1294,14 @@ export const StorageService = {
     localStorage.setItem(KEY_CLASSES, JSON.stringify(classes));
     // Persist all classes to Firestore
     classes.forEach((cls) => {
-      setDoc(doc(db, 'classes', cls.id), cls).catch((err) => {
-        handleFirestoreError(err, OperationType.WRITE, `classes/${cls.id}`);
-      });
+      try {
+        const cleanData = cleanForFirestore(cls);
+        setDoc(doc(db, 'classes', cls.id), cleanData).catch((err) => {
+          handleFirestoreError(err, OperationType.WRITE, `classes/${cls.id}`);
+        });
+      } catch (err) {
+        console.warn(`[Firestore] Skipping write for class ${cls.id}:`, err);
+      }
     });
   },
 
@@ -1274,10 +1316,15 @@ export const StorageService = {
       updated = [{ ...cls, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, ...current];
     }
     localStorage.setItem(KEY_CLASSES, JSON.stringify(updated));
-    // Save to Firestore
-    setDoc(doc(db, 'classes', cls.id), cls).catch((err) => {
-      handleFirestoreError(err, OperationType.WRITE, `classes/${cls.id}`);
-    });
+    // Save to Firestore safely
+    try {
+      const cleanData = cleanForFirestore(cls);
+      setDoc(doc(db, 'classes', cls.id), cleanData).catch((err) => {
+        handleFirestoreError(err, OperationType.WRITE, `classes/${cls.id}`);
+      });
+    } catch (err) {
+      console.warn(`[Firestore] Error saving class ${cls.id}:`, err);
+    }
   },
 
   deleteClass(classId: string): void {

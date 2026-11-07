@@ -25,7 +25,8 @@ import {
   Mail,
   User,
   Sliders,
-  Layers
+  Layers,
+  RefreshCw
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Employee, EmployeeCategory, UserRole, SchoolClass } from '../types/attendance';
@@ -219,17 +220,35 @@ export const UserDatabaseView: React.FC<UserDatabaseViewProps> = ({
     reader.readAsDataURL(file);
   };
 
-  // Save Edited User
-  const handleSaveEditUser = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingUser || !editFormData.name || !editFormData.nip) return;
+  // Save Edited User State & Handler
+  const [isSavingUser, setIsSavingUser] = useState(false);
 
-    const barcode = (editFormData.qrCodeId?.trim()) || editFormData.nip.trim();
+  const handleSaveEditUser = (e?: React.FormEvent | React.MouseEvent) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!editingUser) return;
+
+    const trimmedName = (editFormData.name || '').trim();
+    const trimmedNip = (editFormData.nip || '').trim();
+
+    if (!trimmedName) {
+      setEditPhotoError('Nama lengkap pengguna wajib diisi dan tidak boleh kosong.');
+      return;
+    }
+
+    if (!trimmedNip) {
+      setEditPhotoError('Nomor NIP atau NISN pengguna wajib diisi.');
+      return;
+    }
+
+    setIsSavingUser(true);
+    setEditPhotoError(null);
+
+    const barcode = (editFormData.qrCodeId?.trim()) || trimmedNip;
 
     const updatedUser: Employee = {
       ...editingUser,
-      name: editFormData.name.trim(),
-      nip: editFormData.nip.trim(),
+      name: trimmedName,
+      nip: trimmedNip,
       role: (editFormData.role as UserRole) || editingUser.role,
       category: (editFormData.category as EmployeeCategory) || editingUser.category,
       department: editFormData.department?.trim() || editingUser.department,
@@ -240,51 +259,67 @@ export const UserDatabaseView: React.FC<UserDatabaseViewProps> = ({
       qrCodeId: barcode,
       isActive: editFormData.isActive !== undefined ? editFormData.isActive : editingUser.isActive,
       avatarUrl: editFormData.avatarUrl || editingUser.avatarUrl,
-      notes: editFormData.notes || editingUser.notes,
+      notes: editFormData.notes || editingUser.notes || '',
     };
 
-    // Update in StorageService & Firestore
-    StorageService.updateEmployee(updatedUser);
+    try {
+      // 1. Update in StorageService & Firestore
+      StorageService.updateEmployee(updatedUser);
 
-    // Update state list
-    const updatedList = employees.map((emp) => (emp.id === updatedUser.id ? updatedUser : emp));
-    onEmployeesChange(updatedList);
+      // 2. Update state list
+      const updatedList = employees.map((emp) => (emp.id === updatedUser.id ? updatedUser : emp));
+      onEmployeesChange(updatedList);
 
-    // If this user is a student, check if they exist in classes and update them too
-    if (updatedUser.role === 'siswa' || updatedUser.category === 'siswa') {
-      const currentClasses = StorageService.getClasses();
-      let classModified = false;
-      const updatedClasses = currentClasses.map((cls) => {
-        const memberIdx = cls.members.findIndex((m) => m.id === updatedUser.id || m.nisn === updatedUser.nip);
-        if (memberIdx >= 0) {
-          classModified = true;
-          const newMembers = [...cls.members];
-          newMembers[memberIdx] = {
-            ...newMembers[memberIdx],
-            name: updatedUser.name,
-            nisn: updatedUser.nip,
-            phone: updatedUser.phone,
-            qrCodeId: updatedUser.qrCodeId,
-            isActive: updatedUser.isActive,
-            photoUrl: updatedUser.avatarUrl,
-          };
-          const updatedCls = { ...cls, members: newMembers, updatedAt: new Date().toISOString() };
-          StorageService.saveClass(updatedCls);
-          return updatedCls;
+      // 3. If this user is a student, sync to classes
+      if (updatedUser.role === 'siswa' || updatedUser.category === 'siswa') {
+        const currentClasses = StorageService.getClasses();
+        let classModified = false;
+        const updatedClasses = currentClasses.map((cls) => {
+          const memberIdx = cls.members.findIndex((m) => m.id === updatedUser.id || m.nisn === updatedUser.nip);
+          if (memberIdx >= 0) {
+            classModified = true;
+            const newMembers = [...cls.members];
+            newMembers[memberIdx] = {
+              ...newMembers[memberIdx],
+              name: updatedUser.name,
+              nisn: updatedUser.nip,
+              phone: updatedUser.phone,
+              qrCodeId: updatedUser.qrCodeId,
+              isActive: updatedUser.isActive,
+              photoUrl: updatedUser.avatarUrl,
+            };
+            const updatedCls = { ...cls, members: newMembers, updatedAt: new Date().toISOString() };
+            StorageService.saveClass(updatedCls);
+            return updatedCls;
+          }
+          return cls;
+        });
+
+        if (classModified && onClassesChange) {
+          onClassesChange(updatedClasses);
         }
-        return cls;
-      });
-
-      if (classModified && onClassesChange) {
-        onClassesChange(updatedClasses);
       }
-    }
 
-    setEditSaveSuccess(`Data "${updatedUser.name}" berhasil diperbarui.`);
-    setTimeout(() => {
+      // 4. Trigger in-app Toast notification
+      window.dispatchEvent(
+        new CustomEvent('absensiku:toast', {
+          detail: {
+            title: 'Perubahan Pengguna Disimpan ✓',
+            body: `Data "${updatedUser.name}" (${updatedUser.role.toUpperCase()}) berhasil disimpan dan diperbarui.`,
+          },
+        })
+      );
+
+      // 5. Success feedback and close modal
+      setImportSuccessMsg(`Data pengguna "${updatedUser.name}" berhasil diperbarui.`);
       setEditingUser(null);
-      setEditSaveSuccess(null);
-    }, 1200);
+      setIsSavingUser(false);
+      setTimeout(() => setImportSuccessMsg(null), 5000);
+    } catch (err: any) {
+      console.error('Gagal menyimpan user:', err);
+      setIsSavingUser(false);
+      setEditPhotoError('Gagal menyimpan perubahan: ' + (err?.message || 'Terjadi kesalahan sistem'));
+    }
   };
 
   // Handle Excel File Selected
@@ -1397,7 +1432,7 @@ export const UserDatabaseView: React.FC<UserDatabaseViewProps> = ({
             </div>
 
             {/* Modal Body Form */}
-            <form onSubmit={handleSaveEditUser} className="p-6 space-y-4 text-xs overflow-y-auto">
+            <form onSubmit={handleSaveEditUser} noValidate className="p-6 space-y-4 text-xs overflow-y-auto">
               
               {/* Success Banner */}
               {editSaveSuccess && (
@@ -1741,22 +1776,51 @@ export const UserDatabaseView: React.FC<UserDatabaseViewProps> = ({
                 </button>
               </div>
 
+              {/* Error Alert Display above Action Buttons */}
+              {editPhotoError && (
+                <div className="p-3 bg-rose-950/80 border border-rose-500/40 text-rose-200 rounded-xl flex items-center gap-2 animate-in fade-in">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span className="font-medium">{editPhotoError}</span>
+                </div>
+              )}
+
               {/* ACTION BUTTONS */}
-              <div className="pt-4 flex justify-end gap-2 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setEditingUser(null)}
-                  className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold flex items-center gap-1.5 shadow-md cursor-pointer transition-colors"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>Simpan Perubahan Pengguna</span>
-                </button>
+              <div className="pt-4 flex items-center justify-between border-t border-slate-800">
+                <span className="text-[11px] text-slate-400">
+                  Pastikan nama dan NIP/NISN terisi sebelum menyimpan
+                </span>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={isSavingUser}
+                    onClick={() => {
+                      setEditingUser(null);
+                      setEditPhotoError(null);
+                    }}
+                    className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium cursor-pointer disabled:opacity-50"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSavingUser}
+                    onClick={handleSaveEditUser}
+                    className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold flex items-center gap-1.5 shadow-md cursor-pointer transition-colors disabled:opacity-60"
+                  >
+                    {isSavingUser ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
+                        <span>Menyimpan...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4 text-slate-950" />
+                        <span>Simpan Perubahan Pengguna</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
             </form>
