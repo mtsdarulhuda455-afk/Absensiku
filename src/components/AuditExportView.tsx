@@ -11,7 +11,8 @@ import {
   MapPin,
   ExternalLink,
   Calendar,
-  CheckCircle2
+  CheckCircle2,
+  Trash2
 } from 'lucide-react';
 import { AttendanceRecord, Employee, OfficeLocation, NotificationLog } from '../types/attendance';
 import { ExportService } from '../services/exportService';
@@ -21,12 +22,14 @@ interface AuditExportViewProps {
   attendanceRecords: AttendanceRecord[];
   employees: Employee[];
   offices: OfficeLocation[];
+  onAttendanceRecordsChange?: (records: AttendanceRecord[]) => void;
 }
 
 export const AuditExportView: React.FC<AuditExportViewProps> = ({
   attendanceRecords,
   employees,
   offices,
+  onAttendanceRecordsChange,
 }) => {
   const [activeTab, setActiveTab] = useState<'attendance' | 'notifications'>('attendance');
   const [searchTerm, setSearchTerm] = useState('');
@@ -44,6 +47,14 @@ export const AuditExportView: React.FC<AuditExportViewProps> = ({
     const matchesDept = selectedDept === 'all' || r.department === selectedDept;
     return matchesSearch && matchesMethod && matchesDept;
   });
+
+  const handleDeleteRecord = (id: string, empName: string, date: string, time: string) => {
+    if (confirm(`Hapus permanen catatan absensi "${empName}" tanggal ${date} (${time} WIB) dari database madrasah dan Cloud Firebase?`)) {
+      StorageService.deleteAttendanceRecord(id);
+      const updated = attendanceRecords.filter((r) => r.id !== id);
+      onAttendanceRecordsChange?.(updated);
+    }
+  };
 
   const handleExportPDF = () => {
     ExportService.printAttendanceAuditPDF(filteredRecords, 'November', 2026);
@@ -170,6 +181,7 @@ export const AuditExportView: React.FC<AuditExportViewProps> = ({
                   <th className="py-2.5 px-3 font-medium">Metode Verifikasi</th>
                   <th className="py-2.5 px-3 font-medium">Lokasi Geofence</th>
                   <th className="py-2.5 px-3 font-medium">Keamanan</th>
+                  <th className="py-2.5 px-3 font-medium text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -234,6 +246,18 @@ export const AuditExportView: React.FC<AuditExportViewProps> = ({
                       <span className="text-[10px] text-slate-500 block font-mono">
                         {r.deviceInfo.split('(')[0].trim()}
                       </span>
+                    </td>
+
+                    {/* Action: Permanent Delete */}
+                    <td className="py-2.5 px-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRecord(r.id, r.employeeName, r.date, r.time)}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 transition-colors cursor-pointer"
+                        title="Hapus catatan presensi ini secara permanen dari Cloud Firebase"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </td>
 
                   </tr>

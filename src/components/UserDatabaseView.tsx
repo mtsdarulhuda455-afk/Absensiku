@@ -410,8 +410,9 @@ export const UserDatabaseView: React.FC<UserDatabaseViewProps> = ({
     if (parsedRows.length === 0) return;
     setIsImporting(true);
 
-    const updated = [...employees, ...(parsedRows as Employee[])];
-    StorageService.saveEmployees(updated);
+    const newItems = parsedRows as Employee[];
+    StorageService.addEmployeesBatch(newItems);
+    const updated = [...employees, ...newItems];
     onEmployeesChange(updated);
 
     setImportSuccessMsg(`Berhasil mengimpor ${parsedRows.length} data pengguna baru ke database.`);
@@ -517,8 +518,8 @@ export const UserDatabaseView: React.FC<UserDatabaseViewProps> = ({
       isActive: true,
     };
 
+    StorageService.addEmployee(created);
     const updated = [created, ...employees];
-    StorageService.saveEmployees(updated);
     onEmployeesChange(updated);
     setIsAddModalOpen(false);
 
@@ -537,11 +538,11 @@ export const UserDatabaseView: React.FC<UserDatabaseViewProps> = ({
     });
   };
 
-  // Delete User
+  // Delete User Permanently
   const handleDeleteEmployee = (id: string, name: string) => {
-    if (confirm(`Hapus data pengguna "${name}" dari database MTs Darul Huda?`)) {
+    if (confirm(`Hapus data pengguna "${name}" dari database MTs Darul Huda secara permanen? Data akan dihapus dari penyimpanan lokal dan Cloud Firebase.`)) {
+      StorageService.deleteEmployee(id);
       const updated = employees.filter((e) => e.id !== id);
-      StorageService.saveEmployees(updated);
       onEmployeesChange(updated);
     }
   };

@@ -54,44 +54,95 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  const menuItems = [
-    {
-      id: 'realtime' as NavigationTab,
-      label: 'Dasbor Real-Time',
-      sublabel: 'Monitoring kehadiran live & radius geofence',
-      icon: Activity,
-    },
-    {
-      id: 'database' as NavigationTab,
-      label: 'Database Pengguna & Excel',
-      sublabel: 'Upload massal .xlsx & cetak barcode batang',
-      icon: Users,
-    },
-    {
-      id: 'classes' as NavigationTab,
-      label: 'Pengaturan Kelas & Wali',
-      sublabel: 'Kelola rombel, wali kelas & anggota siswa',
-      icon: School,
-    },
-    {
-      id: 'time_summary' as NavigationTab,
-      label: 'Rekap Akumulasi Waktu',
-      sublabel: 'Terlambat (>07.00 WIB) & Pulang Cepat (<13.00 WIB)',
-      icon: Clock,
-    },
-    {
-      id: 'audit' as NavigationTab,
-      label: 'Audit & Ekspor Data',
-      sublabel: 'Ekspor laporan resmi PDF & Excel',
-      icon: FileText,
-    },
-    {
-      id: 'portal' as NavigationTab,
-      label: 'Portal Guru & Karyawan',
-      sublabel: 'ID Card barcode batang & jadwal shift',
-      icon: UserCircle2,
-    },
-  ];
+  const userRole = activeEmployee?.role || currentUserRole;
+  const userCategory = activeEmployee?.category;
+  const isTeacher = userRole === 'guru' || userCategory === 'guru';
+  const isStudent = userRole === 'siswa' || userCategory === 'siswa';
+  const isAdminOrSuper = userRole === 'admin' || userRole === 'super_admin';
+
+  // Role-based menu items:
+  // Guru & Siswa ONLY see Dashboard and Terminal Absensi.
+  // Admin & Super Admin have all management menus.
+  let menuItems: Array<{
+    id: NavigationTab;
+    label: string;
+    sublabel: string;
+    icon: any;
+  }> = [];
+
+  if (isStudent) {
+    menuItems = [
+      {
+        id: 'portal',
+        label: 'Dasbor Siswa',
+        sublabel: 'Kartu pelajar, barcode & riwayat kehadiran',
+        icon: UserCircle2,
+      },
+    ];
+  } else if (isTeacher) {
+    menuItems = [
+      {
+        id: 'portal',
+        label: 'Dasbor Guru',
+        sublabel: 'Kehadiran pribadi, ID Card & presensi siswa',
+        icon: Activity,
+      },
+    ];
+  } else if (isAdminOrSuper) {
+    menuItems = [
+      {
+        id: 'realtime',
+        label: 'Dasbor Real-Time',
+        sublabel: 'Monitoring kehadiran live & radius geofence',
+        icon: Activity,
+      },
+      {
+        id: 'database',
+        label: 'Database Pengguna & Excel',
+        sublabel: 'Upload massal .xlsx & cetak barcode batang',
+        icon: Users,
+      },
+      {
+        id: 'classes',
+        label: 'Pengaturan Kelas & Wali',
+        sublabel: 'Kelola rombel, wali kelas & anggota siswa',
+        icon: School,
+      },
+      {
+        id: 'time_summary',
+        label: 'Rekap Akumulasi Waktu',
+        sublabel: 'Terlambat (>07.00 WIB) & Pulang Cepat (<13.00 WIB)',
+        icon: Clock,
+      },
+      {
+        id: 'audit',
+        label: 'Audit & Ekspor Data',
+        sublabel: 'Ekspor laporan resmi PDF & Excel',
+        icon: FileText,
+      },
+      {
+        id: 'portal',
+        label: 'Portal Guru & Karyawan',
+        sublabel: 'ID Card barcode batang & jadwal shift',
+        icon: UserCircle2,
+      },
+    ];
+  } else {
+    menuItems = [
+      {
+        id: 'realtime',
+        label: 'Dasbor',
+        sublabel: 'Ringkasan absensi madrasah',
+        icon: Activity,
+      },
+      {
+        id: 'portal',
+        label: 'Portal Mandiri',
+        sublabel: 'Kartu ID & kehadiran',
+        icon: UserCircle2,
+      },
+    ];
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex">
@@ -183,21 +234,23 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
             </div>
           </button>
 
-          {/* Quick Action: WhatsApp Gateway Settings */}
-          <button
-            type="button"
-            onClick={() => {
-              onOpenWhatsAppSettings();
-              onClose();
-            }}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-xs text-slate-300 hover:bg-slate-800/80 transition-colors"
-          >
-            <MessageSquare className="w-4 h-4 text-blue-400 shrink-0" />
-            <div className="truncate">
-              <span className="block font-medium">Pengaturan WhatsApp Gateway</span>
-              <span className="block text-[10px] text-slate-500">Notifikasi & Pengingat Guru</span>
-            </div>
-          </button>
+          {/* Quick Action: WhatsApp Gateway Settings - ONLY Admin & Super Admin */}
+          {isAdminOrSuper && (
+            <button
+              type="button"
+              onClick={() => {
+                onOpenWhatsAppSettings();
+                onClose();
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-xs text-slate-300 hover:bg-slate-800/80 transition-colors"
+            >
+              <MessageSquare className="w-4 h-4 text-blue-400 shrink-0" />
+              <div className="truncate">
+                <span className="block font-medium">Pengaturan WhatsApp Gateway</span>
+                <span className="block text-[10px] text-slate-500">Notifikasi & Pengingat Guru</span>
+              </div>
+            </button>
+          )}
 
         </div>
 

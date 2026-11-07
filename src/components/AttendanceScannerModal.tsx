@@ -20,9 +20,14 @@ import {
   Clock,
   Sparkles,
   Sliders,
-  CheckCheck
+  CheckCheck,
+  GraduationCap,
+  Users,
+  Search,
+  Lock,
+  Filter
 } from 'lucide-react';
-import { Employee, OfficeLocation, AttendanceRecord, AttendanceType, VerificationMethod, WorkScheduleConfig } from '../types/attendance';
+import { Employee, OfficeLocation, AttendanceRecord, AttendanceType, VerificationMethod, WorkScheduleConfig, SchoolClass } from '../types/attendance';
 import { StorageService, calculateDistanceMeters, detectAttendanceType, parseTimeToMinutes } from '../services/storage';
 import { NotificationService } from '../services/notificationService';
 import { BarcodeBatang } from './BarcodeBatang';
@@ -35,6 +40,8 @@ interface AttendanceScannerModalProps {
   onAttendanceSuccess: (record: AttendanceRecord) => void;
   isOfflineMode: boolean;
   activeEmployee?: Employee | null;
+  classes?: SchoolClass[];
+  initialTargetEmployeeId?: string;
 }
 
 export const AttendanceScannerModal: React.FC<AttendanceScannerModalProps> = ({
@@ -45,11 +52,23 @@ export const AttendanceScannerModal: React.FC<AttendanceScannerModalProps> = ({
   onAttendanceSuccess,
   isOfflineMode,
   activeEmployee,
+  classes = [],
+  initialTargetEmployeeId,
 }) => {
   const [selectedMethod, setSelectedMethod] = useState<VerificationMethod>('face_recognition');
   const [attendanceType, setAttendanceType] = useState<AttendanceType>('check_in');
   const [selectedOffice, setSelectedOffice] = useState<OfficeLocation>(offices[0] || {} as OfficeLocation);
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>(activeEmployee?.id || employees[0]?.id || '');
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>(initialTargetEmployeeId || activeEmployee?.id || employees[0]?.id || '');
+
+  // Attendance target filtering (for teachers & admins attending students)
+  const isOperatorStudent = activeEmployee?.role === 'siswa' || activeEmployee?.category === 'siswa';
+  const isOperatorTeacherOrAdmin = activeEmployee?.role === 'guru' || activeEmployee?.role === 'admin' || activeEmployee?.role === 'super_admin' || activeEmployee?.category === 'guru' || activeEmployee?.category === 'admin' || activeEmployee?.category === 'super_admin';
+
+  const [attendeeCategoryTab, setAttendeeCategoryTab] = useState<'siswa' | 'guru_staf' | 'all'>(
+    isOperatorTeacherOrAdmin ? 'siswa' : 'all'
+  );
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
+  const [employeeSearchTerm, setEmployeeSearchTerm] = useState<string>('');
 
   // Work Schedule & Automatic Detection State
   const [schedule, setSchedule] = useState<WorkScheduleConfig>(StorageService.getSchedule());
@@ -98,14 +117,47 @@ export const AttendanceScannerModal: React.FC<AttendanceScannerModalProps> = ({
   const [lastSuccessRecord, setLastSuccessRecord] = useState<AttendanceRecord | null>(null);
   const [waDirectUrl, setWaDirectUrl] = useState<string | null>(null);
 
-  const selectedEmployee = employees.find((e) => e.id === selectedEmployeeId) || employees[0];
+  // Filtered employees list for Guru, Admin & Super Admin to attend students
+  const filteredEmployees = employees.filter((emp) => {
+    if (isOperatorStudent) {
+      return emp.id === activeEmployee?.id;
+    }
+    if (attendeeCategoryTab === 'siswa') {
+      if (emp.category !== 'siswa' && emp.role !== 'siswa') return false;
+    } else if (attendeeCategoryTab === 'guru_staf') {
+      if (emp.category === 'siswa' || emp.role === 'siswa') return false;
+    }
+    if (selectedClassFilter !== 'all') {
+      if (emp.classId !== selectedClassFilter && !emp.department.toLowerCase().includes(selectedClassFilter.toLowerCase())) {
+        return false;
+      }
+    }
+    if (employeeSearchTerm.trim()) {
+      const q = employeeSearchTerm.toLowerCase();
+      const matchName = emp.name.toLowerCase().includes(q);
+      const matchNip = emp.nip.toLowerCase().includes(q);
+      const matchDept = emp.department.toLowerCase().includes(q);
+      if (!matchName && !matchNip && !matchDept) return false;
+    }
+    return true;
+  });
 
-  // Sync activeEmployee if passed
+  const selectedEmployee = employees.find((e) => e.id === selectedEmployeeId) || filteredEmployees[0] || employees[0];
+
+  // Sync activeEmployee or initialTargetEmployeeId if passed
   useEffect(() => {
-    if (activeEmployee) {
+    if (initialTargetEmployeeId) {
+      setSelectedEmployeeId(initialTargetEmployeeId);
+      const target = employees.find((e) => e.id === initialTargetEmployeeId);
+      if (target?.category === 'siswa' || target?.role === 'siswa') {
+        setAttendeeCategoryTab('siswa');
+      }
+    } else if (isOperatorStudent && activeEmployee) {
+      setSelectedEmployeeId(activeEmployee.id);
+    } else if (activeEmployee && !selectedEmployeeId) {
       setSelectedEmployeeId(activeEmployee.id);
     }
-  }, [activeEmployee]);
+  }, [initialTargetEmployeeId, activeEmployee, isOpen, isOperatorStudent]);
 
   // Run automatic detection whenever modal opens, or employee changes, or schedule changes
   useEffect(() => {
@@ -736,25 +788,144 @@ export const AttendanceScannerModal: React.FC<AttendanceScannerModalProps> = ({
                 </button>
               </div>
 
-              {/* Employee & Office Selector */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">Pilih Karyawan</label>
-                  <select
-                    value={selectedEmployeeId}
-                    onChange={(e) => setSelectedEmployeeId(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
-                  >
-                    {employees.map((emp) => (
-                      <option key={emp.id} value={emp.id}>
-                        {emp.name} ({emp.nip}) - {emp.department}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              {/* Employee & Office Selector Section */}
+              <div className="space-y-3">
+                {isOperatorStudent && activeEmployee ? (
+                  /* Locked to Self for Siswa */
+                  <div className="p-3 bg-blue-950/40 border border-blue-500/30 rounded-xl flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={activeEmployee.avatarUrl}
+                        alt={activeEmployee.name}
+                        className="w-10 h-10 rounded-full object-cover border border-blue-400 shrink-0"
+                      />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-white">{activeEmployee.name}</span>
+                          <span className="text-[10px] bg-blue-600/30 text-blue-300 font-semibold px-1.5 py-0.5 rounded">
+                            SISWA MTs
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-slate-400 block mt-0.5">
+                          NISN: <span className="font-mono text-slate-200">{activeEmployee.nip}</span> · {activeEmployee.department}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs text-blue-300 font-medium shrink-0 bg-blue-900/40 px-2.5 py-1 rounded-md border border-blue-500/20">
+                      <Lock className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Presensi Mandiri</span>
+                    </div>
+                  </div>
+                ) : (
+                  /* Guru, Admin & Super Admin: Full Authority to Attend Students & Staff */
+                  <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <GraduationCap className="w-4 h-4 text-emerald-400" />
+                        <label className="text-xs font-bold text-white tracking-wide">
+                          Pilih Target Presensi (Wewenang Guru & Admin)
+                        </label>
+                      </div>
 
+                      {/* Category Filter Tabs */}
+                      <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800 text-[11px]">
+                        <button
+                          type="button"
+                          onClick={() => setAttendeeCategoryTab('siswa')}
+                          className={`px-2.5 py-1 rounded font-medium transition-colors flex items-center gap-1 ${
+                            attendeeCategoryTab === 'siswa'
+                              ? 'bg-emerald-600 text-white shadow-sm'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <GraduationCap className="w-3 h-3" />
+                          <span>Siswa MTs</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAttendeeCategoryTab('guru_staf')}
+                          className={`px-2.5 py-1 rounded font-medium transition-colors flex items-center gap-1 ${
+                            attendeeCategoryTab === 'guru_staf'
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <Users className="w-3 h-3" />
+                          <span>Guru & Staf</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAttendeeCategoryTab('all')}
+                          className={`px-2.5 py-1 rounded font-medium transition-colors ${
+                            attendeeCategoryTab === 'all'
+                              ? 'bg-slate-700 text-white'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          Semua
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Filter Bar: Class Filter + Search */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {attendeeCategoryTab !== 'guru_staf' && classes.length > 0 && (
+                        <div className="relative">
+                          <select
+                            value={selectedClassFilter}
+                            onChange={(e) => setSelectedClassFilter(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                          >
+                            <option value="all">Semua Kelas MTs</option>
+                            {classes.map((cls) => (
+                              <option key={cls.id} value={cls.id}>
+                                {cls.name} ({cls.members?.length || 0} Siswa)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div className="relative flex-1">
+                        <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+                        <input
+                          type="text"
+                          value={employeeSearchTerm}
+                          onChange={(e) => setEmployeeSearchTerm(e.target.value)}
+                          placeholder="Cari nama siswa / NISN..."
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 placeholder:text-slate-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Main Target Dropdown */}
+                    <div>
+                      <select
+                        value={selectedEmployeeId}
+                        onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 hover:border-slate-600 rounded-lg px-3 py-2 text-xs text-slate-100 font-medium focus:outline-none focus:border-emerald-500"
+                      >
+                        {filteredEmployees.map((emp) => (
+                          <option key={emp.id} value={emp.id}>
+                            {emp.name} — [{emp.category === 'siswa' ? 'NISN' : 'NIP'}: {emp.nip}] ({emp.department})
+                          </option>
+                        ))}
+                      </select>
+                      <div className="flex items-center justify-between mt-1 text-[11px] text-slate-400 px-1">
+                        <span>Menampilkan {filteredEmployees.length} orang tersedia</span>
+                        {selectedEmployee && (
+                          <span className="text-emerald-400 font-medium truncate ml-2">
+                            Terpilih: {selectedEmployee.name} ({selectedEmployee.department})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Office Location Picker */}
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">Lokasi Kantor / Cabang</label>
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">Lokasi Sekolah / Kampus</label>
                   <select
                     value={selectedOffice.id}
                     onChange={(e) => {
@@ -765,7 +936,7 @@ export const AttendanceScannerModal: React.FC<AttendanceScannerModalProps> = ({
                   >
                     {offices.map((off) => (
                       <option key={off.id} value={off.id}>
-                        {off.name} (Radius {off.radiusMeters}m)
+                        {off.name} (Radius Geofence: {off.radiusMeters}m)
                       </option>
                     ))}
                   </select>

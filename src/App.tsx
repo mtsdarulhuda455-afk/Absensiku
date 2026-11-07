@@ -66,6 +66,7 @@ export default function App() {
   const [isWaSettingsOpen, setIsWaSettingsOpen] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+  const [isQuotaAlert, setIsQuotaAlert] = useState<boolean>(StorageService.isQuotaExceeded());
 
   // In-App Toast Alert Feed
   const [toasts, setToasts] = useState<Array<{ id: string; title: string; body: string }>>([]);
@@ -122,6 +123,11 @@ export default function App() {
     };
     window.addEventListener('absensiku:toast', handleToastEvent);
 
+    const handleQuotaEvent = () => {
+      setIsQuotaAlert(true);
+    };
+    window.addEventListener('absensiku:quota_exceeded', handleQuotaEvent);
+
     const handleOnline = () => {
       setIsOffline(false);
       handleSyncOfflineQueue();
@@ -136,19 +142,35 @@ export default function App() {
       if (typeof unsubEmployees === 'function') unsubEmployees();
       if (typeof unsubClasses === 'function') unsubClasses();
       window.removeEventListener('absensiku:toast', handleToastEvent);
+      window.removeEventListener('absensiku:quota_exceeded', handleQuotaEvent);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
 
+  const [scannerTargetId, setScannerTargetId] = useState<string | undefined>(undefined);
+
+  const handleOpenScanner = (targetId?: string) => {
+    setScannerTargetId(targetId);
+    setIsScannerOpen(true);
+  };
+
   const handleRoleChange = (role: UserRole) => {
     setCurrentUserRole(role);
-    if (role === 'employee') {
+    if (role === 'guru') {
+      const teacher = employees.find((e) => e.category === 'guru' || e.role === 'guru') || employees[0];
+      setActiveEmployee(teacher);
+      setCurrentTab('portal');
+    } else if (role === 'siswa') {
+      const student = employees.find((e) => e.category === 'siswa' || e.role === 'siswa') || employees[0];
+      setActiveEmployee(student);
+      setCurrentTab('portal');
+    } else if (role === 'employee') {
       const emp = employees.find((e) => e.category === 'guru') || employees[0];
       setActiveEmployee(emp);
       setCurrentTab('portal');
     } else if (role === 'kiosk') {
-      setIsScannerOpen(true);
+      handleOpenScanner();
     } else {
       if (currentTab === 'portal') setCurrentTab('realtime');
     }
@@ -158,11 +180,25 @@ export default function App() {
     setActiveEmployee(user);
     setCurrentUserRole(user.role);
     StorageService.setAuthUser(user);
+    if (user.role === 'guru' || user.category === 'guru' || user.role === 'siswa' || user.category === 'siswa') {
+      setCurrentTab('portal');
+    } else {
+      setCurrentTab('realtime');
+    }
     NotificationService.sendPushNotification(
       'Login Berhasil',
       `Selamat datang, ${user.name} (${user.position}).`
     );
   };
+
+  // Role guard: Ensure Guru and Siswa only access Dashboard (portal)
+  useEffect(() => {
+    const isTeacher = currentUserRole === 'guru' || activeEmployee?.category === 'guru' || activeEmployee?.role === 'guru';
+    const isStudent = currentUserRole === 'siswa' || activeEmployee?.category === 'siswa' || activeEmployee?.role === 'siswa';
+    if ((isTeacher || isStudent) && currentTab !== 'portal') {
+      setCurrentTab('portal');
+    }
+  }, [currentUserRole, activeEmployee, currentTab]);
 
   const handleLogout = () => {
     StorageService.setAuthUser(null);
@@ -219,7 +255,7 @@ export default function App() {
         currentUserRole={currentUserRole}
         onRoleChange={handleRoleChange}
         activeEmployee={activeEmployee}
-        onOpenScanner={() => setIsScannerOpen(true)}
+        onOpenScanner={() => handleOpenScanner()}
         isOffline={isOffline}
         onToggleOffline={() => setIsOffline((prev) => !prev)}
         pendingSyncCount={offlineQueue.length}
@@ -236,7 +272,7 @@ export default function App() {
         onSelectTab={setCurrentTab}
         currentUserRole={currentUserRole}
         activeEmployee={activeEmployee}
-        onOpenScanner={() => setIsScannerOpen(true)}
+        onOpenScanner={() => handleOpenScanner()}
         onOpenWhatsAppSettings={() => setIsWaSettingsOpen(true)}
         isOffline={isOffline}
         pendingSyncCount={offlineQueue.length}
@@ -244,6 +280,40 @@ export default function App() {
         onLogout={handleLogout}
         onOpenProfile={() => setIsProfileModalOpen(true)}
       />
+
+      {/* Quota Exceeded Alert Banner */}
+      {isQuotaAlert && (
+        <div className="bg-amber-950/95 border-b border-amber-600/60 text-amber-200 text-xs py-2.5 px-4 flex flex-wrap items-center justify-between gap-3 shadow-md animate-in fade-in">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-2.5 w-2.5 relative shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+            </span>
+            <span className="leading-snug">
+              <strong>Batas Kuota Cloud Firestore Tercapai (Spark Free Tier)</strong> — Mode offline lokal aktif. Seluruh absensi & perubahan data tetap tersimpan aman di perangkat dan kuota harian akan di-reset besok.
+            </span>
+          </div>
+          <div className="flex items-center gap-3 text-[11px] shrink-0 font-medium">
+            <a
+              href="https://console.firebase.google.com/project/absensi-mts-darul-huda/firestore/databases/(default)/data?openUpgradeDialog=true"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-amber-300 underline hover:text-white transition-colors"
+            >
+              Firebase Console / Upgrade
+            </a>
+            <span className="text-amber-600">•</span>
+            <a
+              href="https://firebase.google.com/pricing#cloud-firestore"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-amber-300 underline hover:text-white transition-colors"
+            >
+              Info Kuota Spark Enterprise
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Sync Banner if triggered */}
       {syncFeedback && (
@@ -254,7 +324,7 @@ export default function App() {
       )}
 
       {/* Offline Mode Alert Banner */}
-      {isOffline && (
+      {isOffline && !isQuotaAlert && (
         <div className="bg-amber-600/90 text-amber-50 text-xs py-2 px-4 text-center font-medium flex items-center justify-center gap-2">
           <WifiOff className="w-4 h-4" />
           <span>
@@ -347,6 +417,7 @@ export default function App() {
             attendanceRecords={attendanceRecords}
             employees={employees}
             offices={offices}
+            onAttendanceRecordsChange={setAttendanceRecords}
           />
         )}
 
@@ -356,7 +427,10 @@ export default function App() {
             employee={activeEmployee}
             attendanceRecords={attendanceRecords}
             offices={offices}
-            onOpenScanner={() => setIsScannerOpen(true)}
+            onOpenScanner={handleOpenScanner}
+            allEmployees={employees}
+            classes={classes}
+            onAttendanceSuccess={handleAttendanceSuccess}
           />
         )}
 
@@ -383,12 +457,17 @@ export default function App() {
       {/* Attendance Scanner Modal (Camera, AI Face, GPS, Barcode Batang) */}
       <AttendanceScannerModal
         isOpen={isScannerOpen}
-        onClose={() => setIsScannerOpen(false)}
+        onClose={() => {
+          setIsScannerOpen(false);
+          setScannerTargetId(undefined);
+        }}
         employees={employees}
         offices={offices}
         onAttendanceSuccess={handleAttendanceSuccess}
         isOfflineMode={isOffline}
         activeEmployee={activeEmployee}
+        classes={classes}
+        initialTargetEmployeeId={scannerTargetId}
       />
 
       {/* WhatsApp Configuration Modal */}

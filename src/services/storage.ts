@@ -1,5 +1,5 @@
 import { Employee, OfficeLocation, AttendanceRecord, WhatsAppConfig, NotificationLog, MonthlyTimeAccumulation, WorkScheduleConfig, SchoolClass, ClassMember } from '../types/attendance';
-import { db, handleFirestoreError, OperationType, firebaseConfig } from './firebase';
+import { db, handleFirestoreError, OperationType, firebaseConfig, isQuotaExceeded } from './firebase';
 import { 
   collection, 
   doc, 
@@ -10,7 +10,8 @@ import {
   onSnapshot, 
   query, 
   orderBy, 
-  limit 
+  limit,
+  writeBatch
 } from 'firebase/firestore';
 
 export const WORK_HOURS = {
@@ -945,6 +946,7 @@ export const StorageService = {
 
   saveSchedule(schedule: WorkScheduleConfig) {
     localStorage.setItem(KEY_SCHEDULE, JSON.stringify(schedule));
+    if (isQuotaExceeded()) return;
     // Persist to Firebase Firestore
     setDoc(doc(db, 'settings', 'work_schedule'), schedule).catch((err) => {
       handleFirestoreError(err, OperationType.WRITE, 'settings/work_schedule');
@@ -997,19 +999,142 @@ export const StorageService = {
     return INITIAL_EMPLOYEES;
   },
 
-  saveEmployees(employees: Employee[]) {
-    localStorage.setItem(KEY_EMPLOYEES, JSON.stringify(employees));
-    // Persist all employees to Firestore in background safely
-    employees.forEach((emp) => {
+  // Add single employee permanently without overloading Firebase
+  addEmployee(newEmp: Employee): void {
+    const list = this.getEmployees();
+    const existingIdx = list.findIndex((e) => e.id === newEmp.id || e.nip === newEmp.nip);
+    let updated: Employee[];
+    if (existingIdx >= 0) {
+      updated = [...list];
+      updated[existingIdx] = newEmp;
+    } else {
+      updated = [newEmp, ...list];
+    }
+    localStorage.setItem(KEY_EMPLOYEES, JSON.stringify(updated));
+
+    if (!isQuotaExceeded()) {
       try {
-        const cleanData = cleanForFirestore(emp);
-        setDoc(doc(db, 'employees', emp.id), cleanData).catch((err) => {
-          handleFirestoreError(err, OperationType.WRITE, `employees/${emp.id}`);
+        const cleanData = cleanForFirestore(newEmp);
+        setDoc(doc(db, 'employees', newEmp.id), cleanData).catch((err) => {
+          handleFirestoreError(err, OperationType.WRITE, `employees/${newEmp.id}`);
         });
       } catch (err) {
-        console.warn(`[Firestore] Skipping write for ${emp.id}:`, err);
+        console.warn(`[Firestore] Error persisting new employee ${newEmp.id}:`, err);
       }
-    });
+    }
+  },
+
+  // Delete employee permanently from localStorage and Firebase Firestore
+  deleteEmployee(employeeId: string): void {
+    const list = this.getEmployees();
+    const updated = list.filter((e) => e.id !== employeeId);
+    localStorage.setItem(KEY_EMPLOYEES, JSON.stringify(updated));
+
+    // Permanently remove from Firebase Firestore
+    if (!isQuotaExceeded()) {
+      deleteDoc(doc(db, 'employees', employeeId)).catch((err) => {
+        handleFirestoreError(err, OperationType.DELETE, `employees/${employeeId}`);
+      });
+    }
+
+    // Clean up class memberships if this user was a student in any class
+    try {
+      const classes = this.getClasses();
+      let classChanged = false;
+      const updatedClasses = classes.map((cls) => {
+        if (cls.members.some((m) => m.id === employeeId)) {
+          classChanged = true;
+          return {
+            ...cls,
+            members: cls.members.filter((m) => m.id !== employeeId),
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        return cls;
+      });
+      if (classChanged) {
+        this.saveClasses(updatedClasses);
+      }
+    } catch (e) {
+      console.warn('Class cleanup error on employee delete:', e);
+    }
+  },
+
+  // Batch import employees (e.g. from Excel) using writeBatch to avoid overloading Firebase
+  async addEmployeesBatch(newEmps: Employee[]): Promise<void> {
+    if (!newEmps || newEmps.length === 0) return;
+    const currentList = this.getEmployees();
+    const map = new Map<string, Employee>();
+    currentList.forEach((e) => map.set(e.id, e));
+    newEmps.forEach((e) => map.set(e.id, e));
+    const merged = Array.from(map.values());
+    localStorage.setItem(KEY_EMPLOYEES, JSON.stringify(merged));
+
+    if (isQuotaExceeded()) return;
+
+    try {
+      const batchSize = 400;
+      for (let i = 0; i < newEmps.length; i += batchSize) {
+        const chunk = newEmps.slice(i, i + batchSize);
+        const batch = writeBatch(db);
+        chunk.forEach((emp) => {
+          const cleanData = cleanForFirestore(emp);
+          batch.set(doc(db, 'employees', emp.id), cleanData);
+        });
+        await batch.commit();
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'employees/batch');
+    }
+  },
+
+  // Smart differential save: permanently syncs additions, edits, and deletions without redundant writes
+  saveEmployees(employees: Employee[]) {
+    const oldList = this.getEmployees();
+    localStorage.setItem(KEY_EMPLOYEES, JSON.stringify(employees));
+    if (isQuotaExceeded()) return;
+
+    const oldMap = new Map<string, Employee>(oldList.map((e) => [e.id, e]));
+    const newMap = new Map<string, Employee>(employees.map((e) => [e.id, e]));
+
+    // 1. Permanently delete from Firestore any user deleted from the list
+    for (const [oldId] of oldMap) {
+      if (!newMap.has(oldId)) {
+        deleteDoc(doc(db, 'employees', oldId)).catch((err) => {
+          handleFirestoreError(err, OperationType.DELETE, `employees/${oldId}`);
+        });
+      }
+    }
+
+    // 2. Only write new or actually changed employees (zero redundant writes)
+    for (const [newId, newEmp] of newMap) {
+      const oldEmp = oldMap.get(newId);
+      const hasChanged =
+        !oldEmp ||
+        oldEmp.name !== newEmp.name ||
+        oldEmp.nip !== newEmp.nip ||
+        oldEmp.role !== newEmp.role ||
+        oldEmp.category !== newEmp.category ||
+        oldEmp.department !== newEmp.department ||
+        oldEmp.position !== newEmp.position ||
+        oldEmp.isActive !== newEmp.isActive ||
+        oldEmp.avatarUrl !== newEmp.avatarUrl ||
+        oldEmp.qrCodeId !== newEmp.qrCodeId ||
+        oldEmp.phone !== newEmp.phone ||
+        oldEmp.shift !== newEmp.shift ||
+        oldEmp.email !== newEmp.email;
+
+      if (hasChanged) {
+        try {
+          const cleanData = cleanForFirestore(newEmp);
+          setDoc(doc(db, 'employees', newId), cleanData).catch((err) => {
+            handleFirestoreError(err, OperationType.WRITE, `employees/${newId}`);
+          });
+        } catch (err) {
+          console.warn(`[Firestore] Skipping write for ${newId}:`, err);
+        }
+      }
+    }
   },
 
   updateEmployee(updated: Employee): void {
@@ -1034,14 +1159,16 @@ export const StorageService = {
       console.warn('Auth user sync notice:', e);
     }
 
-    // Persist specific doc to Firestore safely
-    try {
-      const cleanData = cleanForFirestore(updated);
-      setDoc(doc(db, 'employees', updated.id), cleanData).catch((err) => {
-        handleFirestoreError(err, OperationType.WRITE, `employees/${updated.id}`);
-      });
-    } catch (err) {
-      console.warn('[Firestore] Error persisting updated employee:', err);
+    // Persist specific doc to Firestore safely if quota allows
+    if (!isQuotaExceeded()) {
+      try {
+        const cleanData = cleanForFirestore(updated);
+        setDoc(doc(db, 'employees', updated.id), cleanData).catch((err) => {
+          handleFirestoreError(err, OperationType.WRITE, `employees/${updated.id}`);
+        });
+      } catch (err) {
+        console.warn('[Firestore] Error persisting updated employee:', err);
+      }
     }
   },
 
@@ -1077,6 +1204,16 @@ export const StorageService = {
     records.unshift(record);
     this.saveAttendanceRecords(records);
 
+    if (isQuotaExceeded()) {
+      // Offline fallback: queue locally so no data is ever lost
+      const queue = this.getOfflineQueue();
+      if (!queue.some((q) => q.id === record.id)) {
+        queue.push({ ...record, isOfflineQueued: true, syncStatus: 'pending' });
+        this.saveOfflineQueue(queue);
+      }
+      return;
+    }
+
     // Save record to Firebase Firestore
     setDoc(doc(db, 'attendance_records', record.id), record)
       .then(() => {
@@ -1091,6 +1228,24 @@ export const StorageService = {
           this.saveOfflineQueue(queue);
         }
       });
+  },
+
+  // Delete attendance record permanently from localStorage and Firebase Firestore
+  deleteAttendanceRecord(recordId: string): void {
+    const records = this.getAttendanceRecords();
+    const updated = records.filter((r) => r.id !== recordId);
+    this.saveAttendanceRecords(updated);
+
+    // Remove from offline queue if queued
+    const queue = this.getOfflineQueue().filter((q) => q.id !== recordId);
+    this.saveOfflineQueue(queue);
+
+    // Permanently remove from Firebase Firestore
+    if (!isQuotaExceeded()) {
+      deleteDoc(doc(db, 'attendance_records', recordId)).catch((err) => {
+        handleFirestoreError(err, OperationType.DELETE, `attendance_records/${recordId}`);
+      });
+    }
   },
 
   getOfflineQueue(): AttendanceRecord[] {
@@ -1115,6 +1270,9 @@ export const StorageService = {
   },
 
   syncOfflineQueue(): { count: number } {
+    if (isQuotaExceeded()) {
+      return { count: 0 };
+    }
     const queue = this.getOfflineQueue();
     if (queue.length === 0) return { count: 0 };
 
@@ -1158,42 +1316,47 @@ export const StorageService = {
     onSchedule?: (sched: WorkScheduleConfig) => void;
     onClasses?: (classes: SchoolClass[]) => void;
   }) {
+    if (isQuotaExceeded()) {
+      return;
+    }
+
     // 1. Initial Pull / Seeding for Employees
     getDocs(collection(db, 'employees'))
       .then((snapshot) => {
         if (!snapshot.empty) {
           const remoteEmployees = snapshot.docs.map(d => d.data() as Employee);
           if (remoteEmployees.length > 0) {
-            this.saveEmployees(remoteEmployees);
+            // Update localStorage only without calling setDoc loop
+            localStorage.setItem(KEY_EMPLOYEES, JSON.stringify(remoteEmployees));
             callbacks?.onEmployees?.(remoteEmployees);
           }
-        } else {
-          // Seed initial MTs Darul Huda employees to Firestore
+        } else if (!isQuotaExceeded()) {
+          // Seed initial MTs Darul Huda employees to Firestore using single batch write
           const initial = this.getEmployees();
-          initial.forEach(emp => {
-            setDoc(doc(db, 'employees', emp.id), emp).catch(() => {});
-          });
+          try {
+            const batch = writeBatch(db);
+            initial.forEach(emp => {
+              batch.set(doc(db, 'employees', emp.id), cleanForFirestore(emp));
+            });
+            batch.commit().catch(() => {});
+          } catch (e) {
+            console.warn('[Firestore] Batch seed notice:', e);
+          }
         }
       })
       .catch((err) => {
         handleFirestoreError(err, OperationType.LIST, 'employees');
       });
 
-    // 2. Initial Pull / Seeding for Attendance Records
-    getDocs(query(collection(db, 'attendance_records'), orderBy('timestamp', 'desc'), limit(150)))
+    // 2. Initial Pull for Attendance Records
+    getDocs(query(collection(db, 'attendance_records'), orderBy('timestamp', 'desc'), limit(100)))
       .then((snapshot) => {
         if (!snapshot.empty) {
           const remoteRecords = snapshot.docs.map(d => d.data() as AttendanceRecord);
           if (remoteRecords.length > 0) {
-            this.saveAttendanceRecords(remoteRecords);
+            localStorage.setItem(KEY_ATTENDANCE, JSON.stringify(remoteRecords));
             callbacks?.onAttendance?.(remoteRecords);
           }
-        } else {
-          // Seed initial attendance demo history to Firestore
-          const initial = this.getAttendanceRecords();
-          initial.forEach(rec => {
-            setDoc(doc(db, 'attendance_records', rec.id), rec).catch(() => {});
-          });
         }
       })
       .catch((err) => {
@@ -1205,32 +1368,35 @@ export const StorageService = {
       .then((docSnap) => {
         if (docSnap.exists()) {
           const remoteSchedule = docSnap.data() as WorkScheduleConfig;
-          this.saveSchedule(remoteSchedule);
+          localStorage.setItem(KEY_SCHEDULE, JSON.stringify(remoteSchedule));
           callbacks?.onSchedule?.(remoteSchedule);
-        } else {
-          const currentSched = this.getSchedule();
-          setDoc(doc(db, 'settings', 'work_schedule'), currentSched).catch(() => {});
         }
       })
       .catch((err) => {
         handleFirestoreError(err, OperationType.GET, 'settings/work_schedule');
       });
 
-    // 4. Initial Pull / Seeding for Classes & Homeroom
+    // 4. Initial Pull for Classes & Homeroom
     getDocs(collection(db, 'classes'))
       .then((snapshot) => {
         if (!snapshot.empty) {
           const remoteClasses = snapshot.docs.map(d => d.data() as SchoolClass);
           if (remoteClasses.length > 0) {
-            this.saveClasses(remoteClasses);
+            localStorage.setItem(KEY_CLASSES, JSON.stringify(remoteClasses));
             callbacks?.onClasses?.(remoteClasses);
           }
-        } else {
-          // Seed initial classes to Firestore
+        } else if (!isQuotaExceeded()) {
+          // Seed initial classes using single batch write
           const initial = this.getClasses();
-          initial.forEach(cls => {
-            setDoc(doc(db, 'classes', cls.id), cls).catch(() => {});
-          });
+          try {
+            const batch = writeBatch(db);
+            initial.forEach(cls => {
+              batch.set(doc(db, 'classes', cls.id), cleanForFirestore(cls));
+            });
+            batch.commit().catch(() => {});
+          } catch (e) {
+            console.warn('[Firestore] Batch classes seed notice:', e);
+          }
         }
       })
       .catch((err) => {
@@ -1240,37 +1406,70 @@ export const StorageService = {
 
   // Attach real-time snapshot listener for attendance records
   subscribeToAttendance(callback: (records: AttendanceRecord[]) => void) {
-    const q = query(collection(db, 'attendance_records'), orderBy('timestamp', 'desc'), limit(200));
-    return onSnapshot(
-      q,
-      (snapshot) => {
-        if (!snapshot.empty) {
+    if (isQuotaExceeded()) return () => {};
+    const q = query(collection(db, 'attendance_records'), orderBy('timestamp', 'desc'), limit(100));
+    let unsubscribed = false;
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = onSnapshot(
+        q,
+        (snapshot) => {
           const list = snapshot.docs.map((d) => d.data() as AttendanceRecord);
-          this.saveAttendanceRecords(list);
+          localStorage.setItem(KEY_ATTENDANCE, JSON.stringify(list));
           callback(list);
+        },
+        (error) => {
+          handleFirestoreError(error, OperationType.LIST, 'attendance_records');
+          if ((error as any)?.code === 'resource-exhausted' || error?.message?.includes('Quota exceeded')) {
+            if (unsub && !unsubscribed) {
+              unsubscribed = true;
+              unsub();
+            }
+          }
         }
-      },
-      (error) => {
-        handleFirestoreError(error, OperationType.LIST, 'attendance_records');
-      }
-    );
+      );
+      return () => {
+        unsubscribed = true;
+        if (unsub) unsub();
+      };
+    } catch (err) {
+      handleFirestoreError(err, OperationType.LIST, 'attendance_records');
+      return () => {};
+    }
   },
 
   // Attach real-time snapshot listener for employees
   subscribeToEmployees(callback: (employees: Employee[]) => void) {
-    return onSnapshot(
-      collection(db, 'employees'),
-      (snapshot) => {
-        if (!snapshot.empty) {
+    if (isQuotaExceeded()) return () => {};
+    let unsubscribed = false;
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = onSnapshot(
+        collection(db, 'employees'),
+        (snapshot) => {
           const list = snapshot.docs.map((d) => d.data() as Employee);
-          this.saveEmployees(list);
+          // Only update localStorage and invoke UI callback - never loop writes!
+          localStorage.setItem(KEY_EMPLOYEES, JSON.stringify(list));
           callback(list);
+        },
+        (error) => {
+          handleFirestoreError(error, OperationType.LIST, 'employees');
+          if ((error as any)?.code === 'resource-exhausted' || error?.message?.includes('Quota exceeded')) {
+            if (unsub && !unsubscribed) {
+              unsubscribed = true;
+              unsub();
+            }
+          }
         }
-      },
-      (error) => {
-        handleFirestoreError(error, OperationType.LIST, 'employees');
-      }
-    );
+      );
+      return () => {
+        unsubscribed = true;
+        if (unsub) unsub();
+      };
+    } catch (err) {
+      handleFirestoreError(err, OperationType.LIST, 'employees');
+      return () => {};
+    }
   },
 
   // ==========================================
@@ -1291,18 +1490,37 @@ export const StorageService = {
   },
 
   saveClasses(classes: SchoolClass[]): void {
+    const oldList = this.getClasses();
     localStorage.setItem(KEY_CLASSES, JSON.stringify(classes));
-    // Persist all classes to Firestore
-    classes.forEach((cls) => {
-      try {
-        const cleanData = cleanForFirestore(cls);
-        setDoc(doc(db, 'classes', cls.id), cleanData).catch((err) => {
-          handleFirestoreError(err, OperationType.WRITE, `classes/${cls.id}`);
+    if (isQuotaExceeded()) return;
+
+    const oldMap = new Map<string, SchoolClass>(oldList.map((c) => [c.id, c]));
+    const newMap = new Map<string, SchoolClass>(classes.map((c) => [c.id, c]));
+
+    // 1. Permanently delete from Firestore any class removed from the list
+    for (const [oldId] of oldMap) {
+      if (!newMap.has(oldId)) {
+        deleteDoc(doc(db, 'classes', oldId)).catch((err) => {
+          handleFirestoreError(err, OperationType.DELETE, `classes/${oldId}`);
         });
-      } catch (err) {
-        console.warn(`[Firestore] Skipping write for class ${cls.id}:`, err);
       }
-    });
+    }
+
+    // 2. Only write new or modified classes
+    for (const [newId, newCls] of newMap) {
+      const oldCls = oldMap.get(newId);
+      const isChanged = !oldCls || JSON.stringify(oldCls) !== JSON.stringify(newCls);
+      if (isChanged) {
+        try {
+          const cleanData = cleanForFirestore(newCls);
+          setDoc(doc(db, 'classes', newId), cleanData).catch((err) => {
+            handleFirestoreError(err, OperationType.WRITE, `classes/${newId}`);
+          });
+        } catch (err) {
+          console.warn(`[Firestore] Skipping write for class ${newId}:`, err);
+        }
+      }
+    }
   },
 
   saveClass(cls: SchoolClass): void {
@@ -1316,6 +1534,7 @@ export const StorageService = {
       updated = [{ ...cls, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, ...current];
     }
     localStorage.setItem(KEY_CLASSES, JSON.stringify(updated));
+    if (isQuotaExceeded()) return;
     // Save to Firestore safely
     try {
       const cleanData = cleanForFirestore(cls);
@@ -1331,6 +1550,7 @@ export const StorageService = {
     const current = this.getClasses();
     const updated = current.filter((c) => c.id !== classId);
     localStorage.setItem(KEY_CLASSES, JSON.stringify(updated));
+    if (isQuotaExceeded()) return;
     // Delete from Firestore
     deleteDoc(doc(db, 'classes', classId)).catch((err) => {
       handleFirestoreError(err, OperationType.DELETE, `classes/${classId}`);
@@ -1389,19 +1609,35 @@ export const StorageService = {
 
   // Attach real-time snapshot listener for classes
   subscribeToClasses(callback: (classes: SchoolClass[]) => void) {
-    return onSnapshot(
-      collection(db, 'classes'),
-      (snapshot) => {
-        if (!snapshot.empty) {
+    if (isQuotaExceeded()) return () => {};
+    let unsubscribed = false;
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = onSnapshot(
+        collection(db, 'classes'),
+        (snapshot) => {
           const list = snapshot.docs.map((d) => d.data() as SchoolClass);
           localStorage.setItem(KEY_CLASSES, JSON.stringify(list));
           callback(list);
+        },
+        (error) => {
+          handleFirestoreError(error, OperationType.LIST, 'classes');
+          if ((error as any)?.code === 'resource-exhausted' || error?.message?.includes('Quota exceeded')) {
+            if (unsub && !unsubscribed) {
+              unsubscribed = true;
+              unsub();
+            }
+          }
         }
-      },
-      (error) => {
-        handleFirestoreError(error, OperationType.LIST, 'classes');
-      }
-    );
+      );
+      return () => {
+        unsubscribed = true;
+        if (unsub) unsub();
+      };
+    } catch (err) {
+      handleFirestoreError(err, OperationType.LIST, 'classes');
+      return () => {};
+    }
   },
 
   getWhatsAppConfig(): WhatsAppConfig {
@@ -1544,5 +1780,10 @@ export const StorageService = {
         formattedTotalWorkTime: formatMinutes(Math.max(0, totalWorkMinutes)),
       };
     });
+  },
+
+  isQuotaExceeded(): boolean {
+    return isQuotaExceeded();
   }
 };
+

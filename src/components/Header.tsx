@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { UserRole, Employee } from '../types/attendance';
 import { NavigationTab } from './SidebarNavigation';
+import { isQuotaExceeded } from '../services/firebase';
 
 interface HeaderProps {
   currentTab: NavigationTab;
@@ -74,7 +75,11 @@ export const Header: React.FC<HeaderProps> = ({
       case 'audit':
         return 'Audit & Ekspor';
       case 'portal':
-        return 'Portal Guru & Karyawan';
+        return activeEmployee?.role === 'siswa' || activeEmployee?.category === 'siswa'
+          ? 'Dasbor Siswa'
+          : activeEmployee?.role === 'guru' || activeEmployee?.category === 'guru'
+          ? 'Dasbor Guru'
+          : 'Portal Guru & Karyawan';
       default:
         return 'Dasbor';
     }
@@ -109,9 +114,19 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="text-blue-400">{getTabTitle(currentTab)}</span>
           </div>
 
-          <div className="hidden lg:flex items-center gap-1.5 px-2 py-1 rounded bg-slate-800/90 border border-slate-700/70 text-[11px] text-amber-300 font-medium ml-2 shadow-xs" title="Database Cloud Firebase Terhubung">
+          <div 
+            className={`hidden lg:flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] font-medium ml-2 shadow-xs ${
+              isQuotaExceeded()
+                ? 'bg-amber-950/80 border-amber-600/60 text-amber-300'
+                : 'bg-slate-800/90 border-slate-700/70 text-amber-300'
+            }`} 
+            title={isQuotaExceeded() ? "Batas kuota harian Firebase tercapai (reset besok). Mode penyimpanan offline lokal aktif." : "Database Cloud Firebase Terhubung"}
+          >
             <Cloud className="w-3.5 h-3.5 text-amber-400" />
-            <span>Firebase: <strong className="text-slate-100 font-semibold">absensi-mts-darul-huda</strong></span>
+            <span>
+              Firebase: <strong className="text-slate-100 font-semibold">absensi-mts-darul-huda</strong>
+              {isQuotaExceeded() && <span className="ml-1 text-[10px] text-amber-400 font-bold">(Mode Lokal)</span>}
+            </span>
           </div>
         </div>
 

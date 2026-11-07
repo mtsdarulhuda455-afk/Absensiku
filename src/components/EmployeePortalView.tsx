@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   User, 
   Scan, 
@@ -10,9 +10,18 @@ import {
   Printer, 
   ShieldCheck, 
   Smartphone,
-  MessageSquare
+  MessageSquare,
+  GraduationCap,
+  Users,
+  Search,
+  CheckCheck,
+  Sparkles,
+  ArrowRight,
+  Filter,
+  Check,
+  QrCode
 } from 'lucide-react';
-import { Employee, AttendanceRecord, OfficeLocation } from '../types/attendance';
+import { Employee, AttendanceRecord, OfficeLocation, SchoolClass, AttendanceType } from '../types/attendance';
 import { StorageService, formatMinutes } from '../services/storage';
 import { BarcodeBatang, generateBarcodeSvg } from './BarcodeBatang';
 
@@ -20,7 +29,10 @@ interface EmployeePortalViewProps {
   employee: Employee;
   attendanceRecords: AttendanceRecord[];
   offices: OfficeLocation[];
-  onOpenScanner: () => void;
+  onOpenScanner: (targetEmployeeId?: string) => void;
+  allEmployees?: Employee[];
+  classes?: SchoolClass[];
+  onAttendanceSuccess?: (record: AttendanceRecord) => void;
 }
 
 export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
@@ -28,9 +40,29 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
   attendanceRecords,
   offices,
   onOpenScanner,
+  allEmployees = [],
+  classes = [],
+  onAttendanceSuccess,
 }) => {
   const todayStr = new Date().toISOString().split('T')[0];
   
+  const isTeacher = employee.role === 'guru' || employee.category === 'guru';
+  const isStudent = employee.role === 'siswa' || employee.category === 'siswa';
+  const isAdminOrSuper = employee.role === 'admin' || employee.role === 'super_admin' || employee.category === 'admin' || employee.category === 'super_admin';
+
+  // Find homeroom class for this teacher if applicable
+  const homeroomClass = classes.find(
+    (c) => c.homeroomTeacherId === employee.id || c.homeroomTeacherName?.toLowerCase() === employee.name.toLowerCase()
+  );
+
+  // State for teacher student attendance view
+  const [selectedClassId, setSelectedClassId] = useState<string>(
+    homeroomClass?.id || (classes.length > 0 ? classes[0].id : 'all')
+  );
+  const [studentSearchTerm, setStudentSearchTerm] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'unattended' | 'checked_in' | 'checked_out'>('all');
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+
   // Records for this employee
   const myRecords = attendanceRecords.filter((r) => r.employeeId === employee.id);
   const todayCheckIn = myRecords.find((r) => r.date === todayStr && r.type === 'check_in');
@@ -41,6 +73,201 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
   const currentYear = new Date().getFullYear();
   const accumulations = StorageService.getMonthlyAccumulations([employee], attendanceRecords, currentMonth, currentYear);
   const mySummary = accumulations[0];
+
+  // Student list for Teacher & Admin to perform attendance
+  const studentEmployees = allEmployees.filter(
+    (e) => e.category === 'siswa' || e.role === 'siswa'
+  );
+
+  const activeClassObj = classes.find((c) => c.id === selectedClassId);
+
+  const filteredStudents = studentEmployees.filter((student) => {
+    // Filter by class
+    if (selectedClassId !== 'all') {
+      const matchClassId = student.classId === selectedClassId;
+      const matchDept = activeClassObj && student.department?.toLowerCase().includes(activeClassObj.name.toLowerCase());
+      const matchMember = activeClassObj?.members?.some((m) => m.id === student.id || m.nisn === student.nip);
+      if (!matchClassId && !matchDept && !matchMember) {
+        return false;
+      }
+    }
+
+    // Filter by search query
+    if (studentSearchTerm.trim()) {
+      const q = studentSearchTerm.toLowerCase();
+      const matchName = student.name.toLowerCase().includes(q);
+      const matchNip = student.nip.toLowerCase().includes(q);
+      if (!matchName && !matchNip) return false;
+    }
+
+    // Filter by attendance status today
+    const studentCheckIn = attendanceRecords.find(
+      (r) => r.employeeId === student.id && r.date === todayStr && r.type === 'check_in'
+    );
+    const studentCheckOut = attendanceRecords.find(
+      (r) => r.employeeId === student.id && r.date === todayStr && r.type === 'check_out'
+    );
+
+    if (statusFilter === 'unattended') {
+      if (studentCheckIn) return false;
+    } else if (statusFilter === 'checked_in') {
+      if (!studentCheckIn) return false;
+    } else if (statusFilter === 'checked_out') {
+      if (!studentCheckOut) return false;
+    }
+
+    return true;
+  });
+
+  // Action: Mark single student attendance directly
+  const handleDirectAttendStudent = (student: Employee, type: AttendanceType) => {
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+    let status: 'on_time' | 'late' | 'early_leave' = 'on_time';
+    let lateMinutes = 0;
+    let earlyMinutes = 0;
+
+    if (type === 'check_in') {
+      // 07:00 WIB threshold
+      if (nowMinutes > 7 * 60) {
+        status = 'late';
+        lateMinutes = nowMinutes - 7 * 60;
+      } else {
+        status = 'on_time';
+        lateMinutes = 0;
+      }
+    } else {
+      // 13:00 WIB threshold
+      if (nowMinutes < 13 * 60) {
+        status = 'early_leave';
+        earlyMinutes = 13 * 60 - nowMinutes;
+      } else {
+        status = 'on_time';
+        earlyMinutes = 0;
+      }
+    }
+
+    const defaultOffice = offices[0] || {
+      id: 'off-sekolah',
+      name: 'Gedung Utama MTs Darul Huda',
+      latitude: -6.22485,
+      longitude: 106.80952,
+      radiusMeters: 100,
+    };
+
+    const newRecord: AttendanceRecord = {
+      id: 'TRX-' + Math.floor(100000 + Math.random() * 900000),
+      employeeId: student.id,
+      employeeName: student.name,
+      employeeNip: student.nip,
+      department: student.department,
+      date: dateStr,
+      time: timeStr,
+      timestamp: Date.now(),
+      type,
+      status,
+      lateMinutes,
+      earlyMinutes,
+      overtimeHours: 0,
+      verificationMethod: 'biometric_fingerprint',
+      matchConfidence: 99.8,
+      photoSnapshot: student.avatarUrl,
+      location: {
+        lat: defaultOffice.latitude,
+        lng: defaultOffice.longitude,
+        officeId: defaultOffice.id,
+        officeName: defaultOffice.name,
+        distanceMeters: 8,
+        isWithinRadius: true,
+      },
+      isOfflineQueued: false,
+      syncStatus: 'synced',
+      pushNotificationSent: true,
+      waNotificationSent: true,
+      waStatus: 'terkirim',
+      deviceInfo: `Wewenang Guru (${employee.name})`,
+      notes: `Diabsenkan langsung oleh Guru: ${employee.name}`,
+    };
+
+    StorageService.addAttendanceRecord(newRecord);
+    onAttendanceSuccess?.(newRecord);
+
+    setActionFeedback(
+      `Presensi ${type === 'check_in' ? 'Masuk' : 'Pulang'} berhasil dicatat untuk ${student.name} (${status === 'on_time' ? 'Tepat Waktu' : `Terlambat ${lateMinutes}m`}).`
+    );
+    setTimeout(() => setActionFeedback(null), 4000);
+  };
+
+  // Action: Bulk attend all un-checked-in students in current class view
+  const handleBulkAttendClass = () => {
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+    const isLate = nowMinutes > 7 * 60;
+    const lateMinutes = isLate ? nowMinutes - 7 * 60 : 0;
+    const status = isLate ? 'late' : 'on_time';
+
+    const defaultOffice = offices[0] || {
+      id: 'off-sekolah',
+      name: 'Gedung Utama MTs Darul Huda',
+      latitude: -6.22485,
+      longitude: 106.80952,
+      radiusMeters: 100,
+    };
+
+    let count = 0;
+    filteredStudents.forEach((student) => {
+      const alreadyCheckedIn = attendanceRecords.some(
+        (r) => r.employeeId === student.id && r.date === dateStr && r.type === 'check_in'
+      );
+      if (!alreadyCheckedIn) {
+        const record: AttendanceRecord = {
+          id: 'TRX-' + Math.floor(100000 + Math.random() * 900000),
+          employeeId: student.id,
+          employeeName: student.name,
+          employeeNip: student.nip,
+          department: student.department,
+          date: dateStr,
+          time: timeStr,
+          timestamp: Date.now(),
+          type: 'check_in',
+          status,
+          lateMinutes,
+          earlyMinutes: 0,
+          overtimeHours: 0,
+          verificationMethod: 'biometric_fingerprint',
+          matchConfidence: 100,
+          photoSnapshot: student.avatarUrl,
+          location: {
+            lat: defaultOffice.latitude,
+            lng: defaultOffice.longitude,
+            officeId: defaultOffice.id,
+            officeName: defaultOffice.name,
+            distanceMeters: 5,
+            isWithinRadius: true,
+          },
+          isOfflineQueued: false,
+          syncStatus: 'synced',
+          pushNotificationSent: true,
+          waNotificationSent: true,
+          waStatus: 'terkirim',
+          deviceInfo: `Presensi Kolektif Guru (${employee.name})`,
+          notes: `Presensi Cepat Kolektif oleh Guru: ${employee.name}`,
+        };
+        StorageService.addAttendanceRecord(record);
+        onAttendanceSuccess?.(record);
+        count++;
+      }
+    });
+
+    setActionFeedback(`Berhasil mencatat presensi masuk untuk ${count} siswa sekaligus.`);
+    setTimeout(() => setActionFeedback(null), 5000);
+  };
 
   return (
     <div className="space-y-6">
@@ -55,27 +282,295 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
           />
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold tracking-tight text-white">{employee.name}</h2>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-500/20 text-blue-300">
-                {employee.category}
+              <h2 className="text-xl font-bold tracking-tight text-white">
+                {isStudent ? `Dasbor Siswa: ${employee.name}` : isTeacher ? `Dasbor Guru: ${employee.name}` : employee.name}
+              </h2>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                isStudent ? 'bg-emerald-500/20 text-emerald-300' : 'bg-blue-500/20 text-blue-300'
+              }`}>
+                {employee.category === 'siswa' ? 'SISWA MTs' : employee.category === 'guru' ? 'DEWAN GURU' : employee.category}
               </span>
+              {homeroomClass && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  Wali Kelas: {homeroomClass.name}
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              NIP: {employee.nip} · {employee.position} ({employee.department})
+              {isStudent ? 'NISN' : 'NIP'}: {employee.nip} · {employee.position} ({employee.department})
             </p>
           </div>
         </div>
 
         <button
-          onClick={onOpenScanner}
-          className="flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-all shadow-md shrink-0"
+          onClick={() => onOpenScanner(employee.id)}
+          className="flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-all shadow-md shrink-0 cursor-pointer"
         >
           <Scan className="w-4 h-4" />
-          <span>Lakukan Presensi Sekarang</span>
+          <span>{isStudent ? 'Lakukan Presensi Mandiri' : 'Buka Terminal Absensi'}</span>
         </button>
       </div>
 
-      {/* Main Grid: ID Card & Status */}
+      {/* Action Feedback Banner */}
+      {actionFeedback && (
+        <div className="p-3 bg-emerald-950/80 border border-emerald-500/40 text-emerald-200 text-xs rounded-xl flex items-center justify-between gap-2 shadow-lg animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{actionFeedback}</span>
+          </div>
+          <button
+            onClick={() => setActionFeedback(null)}
+            className="text-emerald-400 hover:text-emerald-200 text-[11px] font-semibold"
+          >
+            Tutup
+          </button>
+        </div>
+      )}
+
+      {/* SECTION KHUSUS GURU: Presensi Siswa Kelas (Wewenang Guru & Wali Kelas) */}
+      {(isTeacher || isAdminOrSuper) && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-emerald-600/20 text-emerald-400 rounded-lg">
+                  <GraduationCap className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    Presensi Siswa Kelas
+                    <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-semibold px-2 py-0.5 rounded border border-emerald-500/30">
+                      Wewenang Guru & Wali Kelas
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Guru dapat melakukan absensi masuk, absen pulang, atau scan kartu barcode langsung untuk seluruh siswa.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Bulk Attend Action */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleBulkAttendClass}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-md transition-colors cursor-pointer"
+                title="Hadirkan semua siswa di filter ini yang belum absen masuk hari ini"
+              >
+                <CheckCheck className="w-4 h-4" />
+                <span>Presensi Cepat: Hadirkan Seluruh Siswa Hari Ini</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Filter Bar: Class Selector, Search, and Status Tabs */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* Class Dropdown */}
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Pilih Kelas</label>
+              <select
+                value={selectedClassId}
+                onChange={(e) => setSelectedClassId(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-medium"
+              >
+                <option value="all">Semua Kelas MTs</option>
+                {classes.map((cls) => (
+                  <option key={cls.id} value={cls.id}>
+                    {cls.name} {cls.homeroomTeacherId === employee.id ? '★ (Kelas Bimbingan Anda)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Search Input */}
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Cari Nama Siswa / NISN</label>
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
+                <input
+                  type="text"
+                  value={studentSearchTerm}
+                  onChange={(e) => setStudentSearchTerm(e.target.value)}
+                  placeholder="Ketik nama atau NISN siswa..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 placeholder:text-slate-600"
+                />
+              </div>
+            </div>
+
+            {/* Status Filter Tabs */}
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Status Kehadiran Hari Ini</label>
+              <div className="grid grid-cols-4 gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-[11px] text-center">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('all')}
+                  className={`py-1 rounded font-medium transition-colors ${
+                    statusFilter === 'all' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Semua
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('unattended')}
+                  className={`py-1 rounded font-medium transition-colors ${
+                    statusFilter === 'unattended' ? 'bg-rose-950 text-rose-300' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Belum
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('checked_in')}
+                  className={`py-1 rounded font-medium transition-colors ${
+                    statusFilter === 'checked_in' ? 'bg-blue-950 text-blue-300' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Masuk
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('checked_out')}
+                  className={`py-1 rounded font-medium transition-colors ${
+                    statusFilter === 'checked_out' ? 'bg-teal-950 text-teal-300' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Pulang
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Student List Table */}
+          <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-950/60">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-950 border-b border-slate-800 text-slate-400 font-medium">
+                  <th className="py-3 px-4">Nama Siswa</th>
+                  <th className="py-3 px-3">NISN & Kelas</th>
+                  <th className="py-3 px-3">Absen Masuk (07.00 WIB)</th>
+                  <th className="py-3 px-3">Absen Pulang (13.00 WIB)</th>
+                  <th className="py-3 px-4 text-right">Aksi Absensi Guru</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80">
+                {filteredStudents.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-slate-500">
+                      Tidak ada data siswa yang cocok dengan filter atau kelas ini.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredStudents.map((student) => {
+                    const studentCheckIn = attendanceRecords.find(
+                      (r) => r.employeeId === student.id && r.date === todayStr && r.type === 'check_in'
+                    );
+                    const studentCheckOut = attendanceRecords.find(
+                      (r) => r.employeeId === student.id && r.date === todayStr && r.type === 'check_out'
+                    );
+
+                    return (
+                      <tr key={student.id} className="hover:bg-slate-900/60 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={student.avatarUrl}
+                              alt={student.name}
+                              className="w-9 h-9 rounded-full object-cover border border-slate-700 shrink-0"
+                            />
+                            <div>
+                              <span className="font-semibold text-slate-100 block">{student.name}</span>
+                              <span className="text-[11px] text-slate-400">{student.phone ? `WA: ${student.phone}` : 'No WA Wali'}</span>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-3">
+                          <span className="font-mono text-slate-300 block">{student.nip}</span>
+                          <span className="text-[11px] text-emerald-400 font-medium">{student.department}</span>
+                        </td>
+
+                        <td className="py-3 px-3">
+                          {studentCheckIn ? (
+                            <div>
+                              <span className="font-mono font-bold text-white text-xs">{studentCheckIn.time} WIB</span>
+                              <span className={`block text-[10px] font-semibold ${
+                                studentCheckIn.status === 'on_time' ? 'text-emerald-400' : 'text-amber-400'
+                              }`}>
+                                {studentCheckIn.status === 'on_time' ? '✓ Tepat Waktu' : `Terlambat +${studentCheckIn.lateMinutes}m`}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-rose-950/60 text-rose-400 border border-rose-900/40">
+                              Belum Masuk
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-3">
+                          {studentCheckOut ? (
+                            <div>
+                              <span className="font-mono font-bold text-white text-xs">{studentCheckOut.time} WIB</span>
+                              <span className={`block text-[10px] font-semibold ${
+                                studentCheckOut.status === 'early_leave' ? 'text-rose-400' : 'text-teal-400'
+                              }`}>
+                                {studentCheckOut.status === 'early_leave' ? `Pulang Awal (-${studentCheckOut.earlyMinutes}m)` : '✓ Selesai'}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-500 text-[11px]">Belum Pulang</span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {!studentCheckIn ? (
+                              <button
+                                type="button"
+                                onClick={() => handleDirectAttendStudent(student, 'check_in')}
+                                className="px-2.5 py-1 text-[11px] font-semibold rounded bg-emerald-600 hover:bg-emerald-500 text-white transition-colors cursor-pointer shadow-sm"
+                                title="Catat kehadiran masuk siswa ini sekarang"
+                              >
+                                Absen Masuk
+                              </button>
+                            ) : !studentCheckOut ? (
+                              <button
+                                type="button"
+                                onClick={() => handleDirectAttendStudent(student, 'check_out')}
+                                className="px-2.5 py-1 text-[11px] font-semibold rounded bg-teal-600 hover:bg-teal-500 text-white transition-colors cursor-pointer shadow-sm"
+                                title="Catat absensi pulang siswa ini"
+                              >
+                                Absen Pulang
+                              </button>
+                            ) : (
+                              <span className="text-[11px] text-emerald-400 font-semibold px-2 py-0.5 bg-emerald-950/40 rounded border border-emerald-900/30">
+                                Lengkap
+                              </span>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => onOpenScanner(student.id)}
+                              className="px-2.5 py-1 text-[11px] font-medium rounded bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 flex items-center gap-1 transition-colors cursor-pointer"
+                              title="Buka pemindai barcode / kamera khusus siswa ini"
+                            >
+                              <Scan className="w-3 h-3" />
+                              <span>Scan Barcode</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Main Grid: ID Card & Status Pribadi Pegawai / Siswa */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Left Column: Digital ID Badge with 1D Barcode Batang */}
@@ -98,7 +593,9 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
 
           <h3 className="font-bold text-slate-100 text-base">{employee.name}</h3>
           <span className="text-xs text-blue-400 font-medium">{employee.position}</span>
-          <span className="text-[11px] font-mono text-slate-400 mt-0.5">{employee.nip}</span>
+          <span className="text-[11px] font-mono text-slate-400 mt-0.5">
+            {isStudent ? 'NISN' : 'NIP'}: {employee.nip}
+          </span>
 
           {/* 1D Linear Barcode Batang representation */}
           <div className="mt-4 p-2.5 bg-white rounded-lg shadow-inner flex flex-col items-center border border-slate-300">
@@ -159,94 +656,91 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
                         border: 1px solid #cbd5e1;
                         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
                         display: flex;
-                        gap: 12px;
                         align-items: center;
+                        gap: 12px;
                       }
                       .btn-print {
-                        padding: 9px 22px;
-                        background: #0f172a;
+                        background: #0284c7;
                         color: white;
                         border: none;
+                        padding: 8px 16px;
                         border-radius: 6px;
+                        font-weight: 600;
                         cursor: pointer;
-                        font-weight: bold;
                         font-size: 13px;
                       }
                       .id-card {
-                        width: 240px;
-                        height: 380px;
+                        width: 54mm;
+                        height: 85.6mm;
+                        border-radius: 9px;
                         background: #ffffff;
-                        border: 1.5px solid #0f172a;
-                        border-radius: 12px;
-                        overflow: hidden;
+                        border: 1px solid #cbd5e1;
+                        box-shadow: 0 8px 24px rgba(0,0,0,0.12);
                         display: flex;
                         flex-direction: column;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-                        page-break-inside: avoid;
-                        break-inside: avoid;
+                        overflow: hidden;
+                        position: relative;
                       }
                       .card-header {
-                        background: #0f172a;
-                        color: #ffffff;
-                        padding: 9px 10px;
+                        background: #0369a1;
+                        color: white;
+                        padding: 7px 8px 5px 8px;
                         text-align: center;
-                        border-bottom: 2.5px solid #0284c7;
                       }
                       .card-inst {
-                        font-size: 8px;
-                        font-weight: 700;
-                        color: #94a3b8;
-                        text-transform: uppercase;
+                        font-size: 7.5px;
                         letter-spacing: 0.8px;
+                        font-weight: 600;
+                        color: #bae6fd;
                       }
                       .card-title {
-                        font-size: 11px;
+                        font-size: 10px;
                         font-weight: 800;
-                        letter-spacing: 0.5px;
+                        letter-spacing: 0.4px;
                         margin-top: 1px;
                       }
                       .card-sub {
-                        font-size: 7.5px;
-                        color: #38bdf8;
+                        font-size: 6.5px;
+                        color: #e0f2fe;
                         margin-top: 1px;
                       }
                       .card-body {
-                        padding: 10px 12px;
+                        padding: 8px 10px;
                         display: flex;
                         flex-direction: column;
                         align-items: center;
                         flex: 1;
                         text-align: center;
-                        background: #ffffff;
                       }
                       .avatar-wrap {
-                        margin-bottom: 6px;
+                        width: 52px;
+                        height: 52px;
+                        border-radius: 50%;
+                        border: 2px solid #0284c7;
+                        overflow: hidden;
+                        margin-bottom: 5px;
+                        background: #f1f5f9;
                       }
                       .avatar-img {
-                        width: 68px;
-                        height: 68px;
-                        border-radius: 50%;
+                        width: 100%;
+                        height: 100%;
                         object-fit: cover;
-                        border: 2px solid #0284c7;
-                        display: block;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                       }
                       .emp-name {
-                        font-size: 13px;
+                        font-size: 10px;
                         font-weight: 800;
                         color: #0f172a;
-                        line-height: 1.25;
-                        margin-bottom: 2px;
-                      }
-                      .emp-pos {
-                        font-size: 10px;
-                        color: #0284c7;
-                        font-weight: 600;
                         line-height: 1.2;
                       }
+                      .emp-pos {
+                        font-size: 8px;
+                        color: #0284c7;
+                        font-weight: 600;
+                        margin-top: 2px;
+                      }
                       .emp-nip {
-                        font-size: 9px;
-                        font-family: 'Courier New', Courier, monospace;
+                        font-size: 8px;
+                        font-family: monospace;
                         font-weight: bold;
                         color: #475569;
                         margin-top: 2px;
@@ -274,6 +768,11 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
                         background: #ecfdf5;
                         color: #047857;
                         border: 1px solid #a7f3d0;
+                      }
+                      .cat-siswa {
+                        background: #fef3c7;
+                        color: #92400e;
+                        border: 1px solid #fde68a;
                       }
                       .barcode-box {
                         width: 100%;
@@ -303,7 +802,7 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
                         }
                         .id-card {
                           box-shadow: none !important;
-                          border: 1px dashed #94a3b8 !important; /* Dotted line cut guide */
+                          border: 1px dashed #94a3b8 !important;
                         }
                       }
                     </style>
@@ -311,7 +810,7 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
                   <body>
                     <div class="no-print">
                       <button onclick="window.print()" class="btn-print">
-                        🖨️ Cetak Kartu ID Pegawai (Print / PDF)
+                        🖨️ Cetak Kartu ID ${isStudent ? 'Siswa (Kartu Pelajar)' : 'Pegawai'}
                       </button>
                       <span style="font-size: 11px; color: #64748b;">
                         Format kartu ID resmi siap cetak dengan barcode batang 1D terkalibrasi
@@ -320,28 +819,27 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
 
                     <div class="id-card">
                       <div class="card-header">
-                        <div class="card-inst">KARTU IDENTITAS RESMI PEGAWAI</div>
-                        <div class="card-title">SISTEM PRESENSI ABSENSIKU</div>
+                        <div class="card-inst">MTs DARUL HUDA</div>
+                        <div class="card-title">${isStudent ? 'KARTU PELAJAR SISWA' : 'KARTU IDENTITAS RESMI PEGAWAI'}</div>
                         <div class="card-sub">PEMERIKSAAN BIOMETRIK & BARCODE 1D</div>
                       </div>
                       
                       <div class="card-body">
                         <div class="avatar-wrap">
-                          <img src="${employee.avatarUrl}" class="avatar-img" alt="${employee.name}" onerror="this.src='/src/assets/images/avatar_reza_aditya_1793876906907.jpg'" />
+                          <img src="${employee.avatarUrl}" class="avatar-img" alt="${employee.name}" />
                         </div>
 
                         <div class="emp-name">${employee.name}</div>
                         <div class="emp-pos">${employee.position}</div>
-                        <div class="emp-nip">NIP: ${employee.nip}</div>
+                        <div class="emp-nip">${isStudent ? 'NISN' : 'NIP'}: ${employee.nip}</div>
                         <div class="emp-dept">${employee.department}</div>
                         
                         <div style="margin-top: 3px;">
-                          <span class="emp-cat ${employee.category === 'guru' ? 'cat-guru' : 'cat-staf'}">
-                            ${employee.category === 'guru' ? 'DEWAN GURU' : 'STAF / KARYAWAN'}
+                          <span class="emp-cat ${isStudent ? 'cat-siswa' : employee.category === 'guru' ? 'cat-guru' : 'cat-staf'}">
+                            ${isStudent ? 'SISWA MTs' : employee.category === 'guru' ? 'DEWAN GURU' : 'STAF / KARYAWAN'}
                           </span>
                         </div>
 
-                        <!-- Real Vector Barcode Batang 1D Container -->
                         <div class="barcode-box">
                           ${barcodeSvg}
                         </div>
@@ -387,7 +885,7 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-blue-400" />
-                <h3 className="text-sm font-semibold text-white">Status Kehadiran Hari Ini</h3>
+                <h3 className="text-sm font-semibold text-white">Status Kehadiran Anda Hari Ini</h3>
               </div>
               <span className="text-xs font-mono text-slate-400">
                 {new Date().toLocaleDateString('id-ID', { dateStyle: 'full' })} (WIB)
@@ -428,8 +926,8 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
                   <div className="pt-2">
                     <p className="text-xs text-slate-400 mb-2">Batas masuk pukul 07.00 WIB tepat (tanpa toleransi keterlambatan).</p>
                     <button
-                      onClick={onOpenScanner}
-                      className="w-full py-1.5 px-3 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors"
+                      onClick={() => onOpenScanner(employee.id)}
+                      className="w-full py-1.5 px-3 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors cursor-pointer"
                     >
                       Absen Masuk Sekarang
                     </button>
@@ -462,8 +960,8 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
                   <div className="pt-2">
                     <p className="text-xs text-slate-400 mb-2">Check-out sebelum jam 13.00 WIB dihitung pulang cepat.</p>
                     <button
-                      onClick={onOpenScanner}
-                      className="w-full py-1.5 px-3 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors"
+                      onClick={() => onOpenScanner(employee.id)}
+                      className="w-full py-1.5 px-3 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors cursor-pointer"
                     >
                       Absen Pulang
                     </button>
